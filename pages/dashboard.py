@@ -10,17 +10,26 @@ import pandas as pd
 
 import ui.styles as styles
 from ui.components import kpi_card, kpi_row, section_header, style_chart, info_box
-from data.generator import load_data, SEASON_START, SEASON_END, TEAM_NAME
+from ui.data_source import render_data_source_selector, get_data
+from data.generator import TEAM_NAME
 from config import COLORS, PALETTE
 
 styles.apply()
 
-# ── Data ──────────────────────────────────────────────────────────────────────
-players, training, wellness, matches, match_players, events = load_data()
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("### 🏠 Dashboard")
+    render_data_source_selector()
 
+# ── Data ──────────────────────────────────────────────────────────────────────
 # ── Header ────────────────────────────────────────────────────────────────────
-st.title(f"⚽ {TEAM_NAME}")
-st.caption(f"Season {SEASON_START.strftime('%b %Y')} – {SEASON_END.strftime('%b %Y')} · Sports Analytics Platform")
+_squad = st.session_state.get("squad_filter")
+_mode  = st.session_state.get("data_mode", "Demo Data")
+_title = _squad if (_mode == "Real Data (FBref 25/26)" and _squad) else TEAM_NAME
+st.title(f"⚽ {_title}")
+st.caption("2025/26 Season · Sports Analytics Platform")
+
+players, training, wellness, matches, match_players, events = get_data()
 st.divider()
 
 # ── Season KPIs ───────────────────────────────────────────────────────────────

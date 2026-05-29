@@ -37,7 +37,7 @@ def cluster_players(
     """
     agg = (
         match_players
-        .groupby(["player_id", "player_name", "position"])[CLUSTER_FEATURES]
+        .groupby(["player_id", "player_name", "position"])[CLUSTER_FEATURES + ["match_rating"]]
         .mean()
         .reset_index()
     )

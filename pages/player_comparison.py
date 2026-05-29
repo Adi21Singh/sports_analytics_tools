@@ -11,7 +11,7 @@ import numpy as np
 
 import ui.styles as styles
 from ui.components import kpi_card, section_header, style_chart, info_box, empty_state
-from data.generator import load_data
+from ui.data_source import render_data_source_selector, get_data
 from analytics.performance import (
     build_radar_profile, compute_derived_kpis,
     z_score_table, percentile_rank, RADAR_METRICS,
@@ -20,12 +20,16 @@ from config import COLORS, PALETTE
 
 styles.apply()
 
-players, training, wellness, matches, match_players, events = load_data()
-match_players = compute_derived_kpis(match_players)
-
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ── Sidebar phase 1 — data source ────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 🔄 Player Comparison")
+    render_data_source_selector()
+
+players, training, wellness, matches, match_players, events = get_data()
+match_players = compute_derived_kpis(match_players)
+
+# ── Sidebar phase 2 — player selector ────────────────────────────────────────
+with st.sidebar:
     all_names = sorted(players["name"].tolist())
     selected  = st.multiselect("Select Players (2–4)", all_names,
                                default=all_names[:2], max_selections=4)
@@ -109,9 +113,8 @@ with tab2:
         rows[pname] = agg
 
     if rows:
-        display_df = pd.DataFrame(rows).T
+        display_df = pd.DataFrame(rows).T.astype(float)
         display_df.index.name = "Player"
-        # Rename columns for readability
         rename = {m: m.replace("_m","").replace("_"," ").title() for m in all_metrics}
         display_df.columns = [rename.get(c, c) for c in display_df.columns]
         st.dataframe(display_df, width="stretch")
@@ -132,6 +135,7 @@ with tab2:
                 long.append({"Player": pname, "Metric": label, "Value": round(val, 2)})
 
         long_df = pd.DataFrame(long)
+        long_df["Value"] = pd.to_numeric(long_df["Value"], errors="coerce").astype(float)
         fig = px.bar(long_df, x="Metric", y="Value", color="Player",
                      barmode="group", color_discrete_sequence=COMP_COLORS,
                      labels={"Value": "Value", "Metric": ""})

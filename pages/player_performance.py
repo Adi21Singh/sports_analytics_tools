@@ -11,18 +11,22 @@ import numpy as np
 
 import ui.styles as styles
 from ui.components import kpi_card, kpi_row, section_header, style_chart, empty_state, info_box
-from data.generator import load_data
+from ui.data_source import render_data_source_selector, get_data
 from analytics.performance import build_radar_profile, compute_derived_kpis, RADAR_METRICS
 from config import COLORS, PALETTE
 
 styles.apply()
 
-players, training, wellness, matches, match_players, events = load_data()
-match_players = compute_derived_kpis(match_players)
-
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ── Sidebar phase 1 — data source (must render before get_data) ───────────────
 with st.sidebar:
     st.markdown("### 📊 Player Performance")
+    render_data_source_selector()
+
+players, training, wellness, matches, match_players, events = get_data()
+match_players = compute_derived_kpis(match_players)
+
+# ── Sidebar phase 2 — player / date controls ──────────────────────────────────
+with st.sidebar:
     name = st.selectbox("Player", sorted(players["name"].tolist()))
     row  = players[players["name"] == name].iloc[0]
     pid  = int(row["id"])

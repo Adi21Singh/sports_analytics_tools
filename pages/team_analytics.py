@@ -11,19 +11,17 @@ import numpy as np
 
 import ui.styles as styles
 from ui.components import kpi_card, kpi_row, section_header, style_chart, info_box
-from data.generator import load_data
+from ui.data_source import render_data_source_selector, get_data
 from analytics.performance import compute_derived_kpis, z_score_table, percentile_rank
 from analytics.clustering import cluster_players, CLUSTER_FEATURES
 from config import COLORS, PALETTE
 
 styles.apply()
 
-players, training, wellness, matches, match_players, events = load_data()
-match_players = compute_derived_kpis(match_players)
-
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ── Sidebar (all controls are data-independent here) ─────────────────────────
 with st.sidebar:
     st.markdown("### 🏆 Team Analytics")
+    render_data_source_selector()
     n_clusters = st.slider("K-means Clusters", 3, 7, 5)
     z_metrics = st.multiselect(
         "Metrics for Z-score Table",
@@ -32,6 +30,9 @@ with st.sidebar:
          "tackles_won", "pressures", "dribbles_won", "match_rating"],
         default=["distance_m", "xg", "goals", "assists", "tackles_won", "match_rating"],
     )
+
+players, training, wellness, matches, match_players, events = get_data()
+match_players = compute_derived_kpis(match_players)
 
 st.title("🏆 Team Analytics")
 st.divider()
@@ -169,7 +170,7 @@ with tab3:
 
         metric_display_cols = display.columns[2:]
         st.dataframe(
-            display.style.applymap(_colour_z, subset=metric_display_cols),
+            display.style.map(_colour_z, subset=metric_display_cols),
             width="stretch", hide_index=True,
         )
 

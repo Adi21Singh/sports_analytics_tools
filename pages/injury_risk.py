@@ -11,7 +11,7 @@ import numpy as np
 
 import ui.styles as styles
 from ui.components import kpi_card, kpi_row, section_header, style_chart, info_box, risk_badge
-from data.generator import load_data
+from ui.data_source import render_data_source_selector, get_data
 from analytics.load_monitoring import (
     calculate_acwr, calculate_pmc, calculate_monotony_strain, availability_pct
 )
@@ -20,11 +20,15 @@ from config import COLORS, PALETTE, ACWR_ZONES, acwr_zone
 
 styles.apply()
 
-players, training, wellness, matches, match_players, events = load_data()
-
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ── Sidebar phase 1 — data source ────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚕️ Injury & Load Monitor")
+    render_data_source_selector()
+
+players, training, wellness, matches, match_players, events = get_data()
+
+# ── Sidebar phase 2 — player / window controls ────────────────────────────────
+with st.sidebar:
     name = st.selectbox("Individual Player", sorted(players["name"].tolist()))
     row  = players[players["name"] == name].iloc[0]
     pid  = int(row["id"])
@@ -174,7 +178,8 @@ with tab2:
         acwr_df["dow"]  = acwr_df["date"].dt.day_name()
         dow_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         acwr_df["dow"] = pd.Categorical(acwr_df["dow"], categories=dow_order, ordered=True)
-        pivot = (acwr_df.pivot_table(index="week", columns="dow", values="daily_load", aggfunc="sum")
+        pivot = (acwr_df.pivot_table(index="week", columns="dow", values="daily_load",
+                                     aggfunc="sum", observed=False)
                  .reindex(columns=dow_order))
         fig3 = px.imshow(pivot, color_continuous_scale="YlOrRd",
                          labels=dict(x="Day", y="Week", color="Load"),

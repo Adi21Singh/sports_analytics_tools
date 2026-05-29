@@ -11,18 +11,22 @@ import numpy as np
 
 import ui.styles as styles
 from ui.components import kpi_card, kpi_row, section_header, style_chart, draw_pitch, info_box
-from data.generator import load_data
+from ui.data_source import render_data_source_selector, get_data
 from analytics.performance import compute_derived_kpis
 from config import COLORS, PALETTE
 
 styles.apply()
 
-players, training, wellness, matches, match_players, events = load_data()
-match_players = compute_derived_kpis(match_players)
-
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ── Sidebar phase 1 — data source ────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚽ Match Analysis")
+    render_data_source_selector()
+
+players, training, wellness, matches, match_players, events = get_data()
+match_players = compute_derived_kpis(match_players)
+
+# ── Sidebar phase 2 — match / position controls ───────────────────────────────
+with st.sidebar:
     labels = [f"M{r['match_id']:02d}  vs {r['opponent']}  ({r['result']})"
               for _, r in matches.sort_values("date").iterrows()]
     sel = st.selectbox("Select Match", labels)
