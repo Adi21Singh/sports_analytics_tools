@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 
 import ui.styles as styles
-from ui.components import kpi_card, kpi_row, section_header, style_chart, draw_pitch, info_box
+from ui.components import kpi_card, kpi_row, section_header, style_chart, draw_pitch, info_box, create_3d_kpi_dashboard
 from ui.data_source import render_data_source_selector, get_data
 from analytics.performance import compute_derived_kpis
 from config import COLORS, PALETTE
@@ -78,8 +78,8 @@ kpi_row([
 ])
 st.markdown("<br>", unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["🗺️ Shot Map", "📈 xG Timeline", "👤 Player Ratings", "📊 Match Stats"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["🗺️ Shot Map", "📈 xG Timeline", "👤 Player Ratings", "📊 Match Stats", "🎯 3D KPI Dashboard"])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SHOT MAP
@@ -96,6 +96,22 @@ with tab1:
             (shots[~shots["on_target"]],         "Off Target", COLORS["danger"],  "x"),
         ]:
             if subset.empty: continue
+
+            hover_texts = []
+            for _, r in subset.iterrows():
+                text = f"<b>{r['player_name']}</b><br>"
+                text += f"Position: {r['position']}<br>"
+                text += f"Minute: {r['minute']}<br>"
+                text += f"xG: {r['xg']:.3f}<br>"
+                text += f"Location: ({r['x']:.1f}, {r['y']:.1f})<br>"
+                if r['on_target']:
+                    text += "Status: On Target"
+                else:
+                    text += "Status: Off Target"
+                if r['goal']:
+                    text += " ⚽ GOAL"
+                hover_texts.append(text)
+
             fig.add_trace(go.Scatter(
                 x=subset["x"], y=subset["y"], mode="markers", name=label,
                 marker=dict(
@@ -103,8 +119,7 @@ with tab1:
                     color=color, symbol=symbol, opacity=0.88,
                     line=dict(width=1, color=COLORS["bg"]),
                 ),
-                text=[f"{r['player_name']}<br>xG: {r['xg']:.3f}<br>Min {r['minute']}"
-                      for _, r in subset.iterrows()],
+                text=hover_texts,
                 hovertemplate="%{text}<extra></extra>",
             ))
     st.plotly_chart(fig, width="stretch")
@@ -113,7 +128,10 @@ with tab1:
         st.subheader("Shot Details")
         shot_tbl = shots[["player_name","position","minute","xg","on_target","goal"]].copy()
         shot_tbl.columns = ["Player","Position","Minute","xG","On Target","Goal"]
-        st.dataframe(shot_tbl.sort_values("Minute"), width="stretch", hide_index=True)
+        shot_tbl = shot_tbl.sort_values("Minute").reset_index(drop=True)
+        st.dataframe(shot_tbl, width="stretch", hide_index=True)
+    else:
+        st.info("No shots recorded for this match with selected position filters.")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # xG TIMELINE
@@ -202,29 +220,51 @@ with tab4:
         l, r = st.columns([1, 1])
         with l:
             section_header("Team Statistics", icon="📊")
-            stats = [
-                ("Total Distance",      f"{mp['distance_m'].sum():,.0f} m"),
-                ("High-Speed Running",  f"{mp['hsr_m'].sum():,.0f} m"),
-                ("Sprint Distance",     f"{mp['sprint_m'].sum():,.0f} m"),
-                ("Total Sprints",       mp["sprint_count"].sum()),
-                ("Accelerations",       mp["accel_count"].sum()),
-                ("Decelerations",       mp["decel_count"].sum()),
-                ("Total Passes",        mp["passes"].sum()),
-                ("Pass Completion",     f"{mp['pass_completion'].mean()*100:.1f}%"),
-                ("Progressive Passes",  mp["progressive_passes"].sum()),
-                ("Pressures",           mp["pressures"].sum()),
-                ("Pressures Won",       mp["pressures_won"].sum()),
-                ("Key Passes",          mp["key_passes"].sum()),
-                ("Dribbles Won",        mp["dribbles_won"].sum()),
-                ("Tackles Won",         mp["tackles_won"].sum()),
-                ("Total Shots",         n_shots),
-                ("Shots on Target",     ot_shots),
-                ("Total xG",            f"{total_xg:.3f}"),
-                ("Possession",          f"{poss:.1f}%"),
-                ("PPDA",                f"{ppda:.1f}"),
-            ]
-            st.dataframe(pd.DataFrame(stats, columns=["Statistic", "Value"]),
-                         width="stretch", hide_index=True)
+            stats_df = pd.DataFrame({
+                "Statistic": [
+                    "Total Distance",
+                    "High-Speed Running",
+                    "Sprint Distance",
+                    "Total Sprints",
+                    "Accelerations",
+                    "Decelerations",
+                    "Total Passes",
+                    "Pass Completion",
+                    "Progressive Passes",
+                    "Pressures",
+                    "Pressures Won",
+                    "Key Passes",
+                    "Dribbles Won",
+                    "Tackles Won",
+                    "Total Shots",
+                    "Shots on Target",
+                    "Total xG",
+                    "Possession",
+                    "PPDA",
+                ],
+                "Value": [
+                    f"{mp['distance_m'].sum():,.0f} m",
+                    f"{mp['hsr_m'].sum():,.0f} m",
+                    f"{mp['sprint_m'].sum():,.0f} m",
+                    f"{int(mp['sprint_count'].sum())}",
+                    f"{int(mp['accel_count'].sum())}",
+                    f"{int(mp['decel_count'].sum())}",
+                    f"{int(mp['passes'].sum())}",
+                    f"{mp['pass_completion'].mean()*100:.1f}%",
+                    f"{int(mp['progressive_passes'].sum())}",
+                    f"{int(mp['pressures'].sum())}",
+                    f"{int(mp['pressures_won'].sum())}",
+                    f"{int(mp['key_passes'].sum())}",
+                    f"{int(mp['dribbles_won'].sum())}",
+                    f"{int(mp['tackles_won'].sum())}",
+                    f"{n_shots}",
+                    f"{ot_shots}",
+                    f"{total_xg:.3f}",
+                    f"{poss:.1f}%",
+                    f"{ppda:.1f}",
+                ]
+            })
+            st.dataframe(stats_df, width="stretch", hide_index=True)
 
         with r:
             section_header("Distance by Position", icon="🏃")
@@ -252,3 +292,63 @@ with tab4:
                                yaxis=dict(title="Count", gridcolor=COLORS["grid"]))
             fig2.update_layout(title="Pressing Volume")
             st.plotly_chart(fig2, width="stretch")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3D KPI DASHBOARD
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab5:
+    if mp.empty:
+        st.info("No player data for 3D visualization.")
+    else:
+        section_header("3D Player Performance Dashboard", icon="🎯",
+                       subtitle="Explore player metrics across three dimensions")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            x_metric = st.selectbox("X-Axis Metric",
+                ["distance_m", "passes", "pressures", "tackles_won", "key_passes",
+                 "dribbles_won", "hsr_m", "sprint_count"], key="x_3d")
+        with col2:
+            y_metric = st.selectbox("Y-Axis Metric",
+                ["match_rating", "pass_completion", "pressures_won", "work_rate",
+                 "max_speed_kmh", "accel_count", "decel_count"], key="y_3d")
+        with col3:
+            z_metric = st.selectbox("Z-Axis Metric",
+                ["match_rating", "distance_m", "passes", "pressures", "work_rate",
+                 "hsr_m", "sprint_count"], key="z_3d")
+
+        try:
+            mp_clean = mp[[x_metric, y_metric, z_metric, "position", "player_name"]].dropna().copy()
+
+            if not mp_clean.empty and len(mp_clean) > 0:
+                fig_3d = create_3d_kpi_dashboard(
+                    mp_clean,
+                    x_col=x_metric,
+                    y_col=y_metric,
+                    z_col=z_metric,
+                    color_col="position",
+                    title=f"3D Player Performance: {x_metric} vs {y_metric} vs {z_metric}"
+                )
+                st.plotly_chart(fig_3d, width="stretch")
+
+                st.subheader("Performance Summary by Position")
+                summary_stats = []
+                for pos in sorted(mp_clean["position"].unique()):
+                    pos_data = mp_clean[mp_clean["position"] == pos]
+                    try:
+                        summary_stats.append({
+                            "Position": str(pos),
+                            x_metric: float(pos_data[x_metric].mean()),
+                            y_metric: float(pos_data[y_metric].mean()),
+                            z_metric: float(pos_data[z_metric].mean()),
+                        })
+                    except (ValueError, TypeError):
+                        continue
+
+                if summary_stats:
+                    summary_data = pd.DataFrame(summary_stats)
+                    st.dataframe(summary_data, width="stretch", hide_index=True)
+            else:
+                st.info("No player data available for visualization")
+        except Exception as e:
+            st.error(f"Error: Could not create dashboard. {str(e)}")

@@ -85,12 +85,13 @@ def style_chart(fig: go.Figure, height: int = 320, **overrides) -> go.Figure:
 
 def draw_pitch() -> go.Figure:
     """Return a blank Plotly figure with a football pitch drawn on it."""
+    import numpy as np
     fig = go.Figure()
 
     shapes = [
         # Outer boundary
         dict(type="rect", x0=0, y0=0, x1=105, y1=68,
-             line=dict(color="#3a5a3a", width=2), fillcolor="#1a3a1a"),
+             line=dict(color="#3a5a3a", width=2.5), fillcolor="#1a3a1a"),
         # Left penalty area
         dict(type="rect", x0=0,    y0=13.84, x1=16.5, y1=54.16,
              line=dict(color="#3a5a3a", width=1.5), fillcolor="rgba(0,0,0,0)"),
@@ -117,13 +118,44 @@ def draw_pitch() -> go.Figure:
         fig.add_shape(**s)
 
     # Centre circle
-    import numpy as np
     theta = np.linspace(0, 2 * np.pi, 100)
     fig.add_trace(go.Scatter(
         x=52.5 + 9.15 * np.cos(theta),
         y=34   + 9.15 * np.sin(theta),
         mode="lines", line=dict(color="#3a5a3a", width=1.5),
         showlegend=False, hoverinfo="skip",
+    ))
+
+    # Corner arcs (1-yard radius)
+    for cx, cy in [(0, 0), (105, 0), (0, 68), (105, 68)]:
+        arc_angle = np.linspace(0, np.pi/2, 30)
+        if cx == 0 and cy == 0:  # Bottom-left
+            arc_x = 1 * np.cos(arc_angle + np.pi)
+            arc_y = 1 * np.sin(arc_angle + np.pi)
+        elif cx == 105 and cy == 0:  # Bottom-right
+            arc_x = 105 - 1 * np.cos(arc_angle)
+            arc_y = 1 * np.sin(arc_angle)
+        elif cx == 0 and cy == 68:  # Top-left
+            arc_x = 1 * np.cos(arc_angle)
+            arc_y = 68 - 1 * np.sin(arc_angle)
+        else:  # Top-right
+            arc_x = 105 - 1 * np.cos(arc_angle + np.pi)
+            arc_y = 68 - 1 * np.sin(arc_angle + np.pi)
+        fig.add_trace(go.Scatter(
+            x=arc_x, y=arc_y, mode="lines",
+            line=dict(color="#3a5a3a", width=1), showlegend=False, hoverinfo="skip",
+        ))
+
+    # Penalty spots
+    fig.add_trace(go.Scatter(
+        x=[11, 94], y=[34, 34], mode="markers",
+        marker=dict(size=3, color="#3a5a3a"), showlegend=False, hoverinfo="skip",
+    ))
+
+    # Center spot
+    fig.add_trace(go.Scatter(
+        x=[52.5], y=[34], mode="markers",
+        marker=dict(size=3, color="#3a5a3a"), showlegend=False, hoverinfo="skip",
     ))
 
     fig.update_layout(
@@ -137,6 +169,105 @@ def draw_pitch() -> go.Figure:
         yaxis=dict(range=[-4, 72],  showgrid=False, zeroline=False, showticklabels=False,
                    scaleanchor="x", scaleratio=1),
     )
+    return fig
+
+
+# ── 3D KPI Dashboard ──────────────────────────────────────────────────────────
+
+def create_3d_kpi_dashboard(
+    df,
+    x_col: str, y_col: str, z_col: str,
+    color_col: str = None,
+    size_col: str = None,
+    hover_cols: list = None,
+    title: str = "3D KPI Dashboard"
+) -> go.Figure:
+    """Create a 3D scatter plot for multi-metric KPI visualization."""
+    import pandas as pd
+    import numpy as np
+
+    hover_cols = hover_cols or []
+    fig = go.Figure()
+
+    def _format_val(v):
+        try:
+            if pd.isna(v):
+                return "N/A"
+            return f"{float(v):.2f}"
+        except (TypeError, ValueError):
+            return str(v)
+
+    if color_col and color_col in df.columns:
+        for color_val in df[color_col].unique():
+            subset = df[df[color_col] == color_val]
+            size_vals = subset[size_col] if size_col and size_col in subset.columns else 5
+
+            hover_text = []
+            for idx, (_, row) in enumerate(subset.iterrows()):
+                player_name = row.get('player_name', f'Player {idx}')
+                text = f"<b>{player_name}</b><br>"
+                text += f"{x_col}: {_format_val(row[x_col])}<br>"
+                text += f"{y_col}: {_format_val(row[y_col])}<br>"
+                text += f"{z_col}: {_format_val(row[z_col])}<br>"
+                for col in hover_cols:
+                    if col in row.index:
+                        text += f"{col}: {_format_val(row[col])}<br>"
+                hover_text.append(text)
+
+            fig.add_trace(go.Scatter3d(
+                x=subset[x_col], y=subset[y_col], z=subset[z_col],
+                mode="markers",
+                name=str(color_val),
+                marker=dict(
+                    size=5 if not isinstance(size_vals, (list, np.ndarray)) else size_vals,
+                    opacity=0.8,
+                    line=dict(width=0.5, color=COLORS["bg"]),
+                ),
+                text=hover_text,
+                hovertemplate="%{text}<extra></extra>",
+            ))
+    else:
+        size_vals = df[size_col] if size_col and size_col in df.columns else 5
+        hover_text = []
+        for idx, (_, row) in enumerate(df.iterrows()):
+            player_name = row.get('player_name', f'Player {idx}')
+            text = f"<b>{player_name}</b><br>"
+            text += f"{x_col}: {_format_val(row[x_col])}<br>"
+            text += f"{y_col}: {_format_val(row[y_col])}<br>"
+            text += f"{z_col}: {_format_val(row[z_col])}<br>"
+            for col in hover_cols:
+                if col in row.index:
+                    text += f"{col}: {_format_val(row[col])}<br>"
+            hover_text.append(text)
+
+        fig.add_trace(go.Scatter3d(
+            x=df[x_col], y=df[y_col], z=df[z_col],
+            mode="markers",
+            marker=dict(
+                size=5 if not isinstance(size_vals, (list, np.ndarray)) else size_vals,
+                color=COLORS["primary"],
+                opacity=0.8,
+                line=dict(width=0.5, color=COLORS["bg"]),
+            ),
+            text=hover_text,
+            hovertemplate="%{text}<extra></extra>",
+        ))
+
+    fig.update_layout(
+        title=title,
+        scene=dict(
+            xaxis=dict(title=x_col, gridcolor="#2a4a2a"),
+            yaxis=dict(title=y_col, gridcolor="#2a4a2a"),
+            zaxis=dict(title=z_col, gridcolor="#2a4a2a"),
+            bgcolor=COLORS["bg"],
+        ),
+        paper_bgcolor=COLORS["bg"],
+        font=dict(color=COLORS["text"], size=11),
+        height=600,
+        margin=dict(l=0, r=0, t=50, b=0),
+        legend=dict(bgcolor="rgba(0,0,0,0.5)"),
+    )
+
     return fig
 
 
