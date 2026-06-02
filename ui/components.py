@@ -162,12 +162,26 @@ def draw_pitch() -> go.Figure:
         paper_bgcolor=COLORS["bg"],
         plot_bgcolor="#1a3a1a",
         font=dict(color=COLORS["text"], size=12),
-        height=480,
+        height=500,
         margin=dict(t=20, b=20, l=20, r=20),
         legend=dict(orientation="h", y=1.08, bgcolor="rgba(0,0,0,0)"),
-        xaxis=dict(range=[-4, 112], showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(range=[-4, 72],  showgrid=False, zeroline=False, showticklabels=False,
-                   scaleanchor="x", scaleratio=1),
+        xaxis=dict(
+            range=[-2, 107],
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False,
+            constrain="domain",
+        ),
+        yaxis=dict(
+            range=[-2, 70],
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False,
+            scaleanchor="x",
+            scaleratio=1,
+            constrain="domain",
+        ),
+        hovermode="closest",
     )
     return fig
 

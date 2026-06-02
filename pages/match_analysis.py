@@ -32,15 +32,26 @@ with st.sidebar:
     sel = st.selectbox("Select Match", labels)
     mid = int(sel.split("M")[1].split(" ")[0])
 
+    # Default to showing all attacking positions
+    available_pos = sorted(players["position"].unique().tolist())
+    default_pos = [p for p in available_pos if p in ['ST', 'LW', 'RW', 'CAM', 'CM']]
+
     pos_filter = st.multiselect(
         "Filter Shot Map by Position",
-        sorted(players["position"].unique().tolist()),
+        available_pos,
+        default=default_pos,
+        help="Select positions to see their shots. Defaults to attacking players (ST, LW, RW, CAM, CM)"
     )
 
 match_row  = matches[matches["match_id"] == mid].iloc[0]
 mp         = match_players[match_players["match_id"] == mid]
 ev         = events[events["match_id"] == mid] if not events.empty else pd.DataFrame()
-shots      = ev[ev["position"].isin(pos_filter)] if (not ev.empty and pos_filter) else ev
+
+# Filter by selected positions (always apply filter if data exists)
+if not ev.empty and pos_filter:
+    shots = ev[ev["position"].isin(pos_filter)].copy()
+else:
+    shots = ev.copy() if not ev.empty else pd.DataFrame()
 
 # ── Header ────────────────────────────────────────────────────────────────────
 result_color = {"Win": COLORS["success"], "Draw": COLORS["warning"], "Loss": COLORS["danger"]}
@@ -78,8 +89,8 @@ kpi_row([
 ])
 st.markdown("<br>", unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
-    ["🗺️ Shot Map", "📈 xG Timeline", "👤 Player Ratings", "📊 Match Stats", "🎯 3D KPI Dashboard"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+    ["🗺️ Shot Map", "📈 xG Timeline", "👤 Player Ratings", "📊 Match Stats", "🎯 3D KPI Dashboard", "💡 CSF & KPI Guide"])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SHOT MAP
@@ -87,6 +98,13 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
 with tab1:
     section_header("Shot Map", icon="🗺️",
                    subtitle="Attacking left → right · Goal at x=105 · Bubble size = xG value")
+
+    # Show info about filtering
+    if pos_filter:
+        st.info(f"📍 Showing shots from: {', '.join(pos_filter)} ({len(shots)} shots)")
+    else:
+        st.warning("No positions selected. Select at least one position in the sidebar.")
+
     fig = draw_pitch()
 
     if not shots.empty:
@@ -112,12 +130,16 @@ with tab1:
                     text += " ⚽ GOAL"
                 hover_texts.append(text)
 
+            # Calculate bubble sizes with better scaling
+            # Min size 12, max size 50 based on xG value
+            sizes = (subset["xg"] * 35).clip(lower=12) + 8
+
             fig.add_trace(go.Scatter(
                 x=subset["x"], y=subset["y"], mode="markers", name=label,
                 marker=dict(
-                    size=subset["xg"] * 45 + 7,
-                    color=color, symbol=symbol, opacity=0.88,
-                    line=dict(width=1, color=COLORS["bg"]),
+                    size=sizes,
+                    color=color, symbol=symbol, opacity=0.85,
+                    line=dict(width=2, color=COLORS["bg"]),
                 ),
                 text=hover_texts,
                 hovertemplate="%{text}<extra></extra>",
@@ -125,11 +147,37 @@ with tab1:
     st.plotly_chart(fig, width="stretch")
 
     if not shots.empty:
-        st.subheader("Shot Details")
+        # Shot summary
+        goals_count = int(shots["goal"].sum())
+        on_target_count = int(shots["on_target"].sum())
+        off_target_count = len(shots) - on_target_count
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Shots", len(shots))
+        with col2:
+            st.metric("Goals ⚽", goals_count)
+        with col3:
+            st.metric("On Target 🎯", on_target_count)
+        with col4:
+            st.metric("Off Target ❌", off_target_count)
+
+        st.subheader("Shot Details Table")
         shot_tbl = shots[["player_name","position","minute","xg","on_target","goal"]].copy()
         shot_tbl.columns = ["Player","Position","Minute","xG","On Target","Goal"]
         shot_tbl = shot_tbl.sort_values("Minute").reset_index(drop=True)
-        st.dataframe(shot_tbl, width="stretch", hide_index=True)
+
+        # Color code the table based on shot result
+        def color_row(row):
+            if row['Goal']:
+                return ['background-color: #1a3a1a'] * len(row)
+            elif row['On Target']:
+                return ['background-color: #2a3a1a'] * len(row)
+            else:
+                return ['background-color: #1a1a1a'] * len(row)
+
+        styled_table = shot_tbl.style.apply(color_row, axis=1)
+        st.dataframe(styled_table, width="stretch", hide_index=True)
     else:
         st.info("No shots recorded for this match with selected position filters.")
 
@@ -352,3 +400,192 @@ with tab5:
                 st.info("No player data available for visualization")
         except Exception as e:
             st.error(f"Error: Could not create dashboard. {str(e)}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CSF & KPI GUIDE
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab6:
+    section_header("Critical Success Factors & Key Metrics", icon="💡",
+                   subtitle="What matters most in football — explained simply")
+
+    col_explain, col_metrics = st.columns([1, 1])
+
+    with col_explain:
+        st.markdown("### 📚 What Are CSF & KPI?")
+        st.markdown("""
+**CSF (Critical Success Factors)** = The few things that MUST go well to win
+- Think of it like baking a cake: right temperature, good ingredients, timing
+
+**KPI (Key Performance Indicators)** = Measurable numbers that show if you're doing well
+- Like a health check-up: heart rate, blood pressure, weight
+        """)
+
+    with col_metrics:
+        st.markdown("### ⚽ Match Result")
+        result_text = f"{match_row['home_away']} {match_row['goals_for']} – {match_row['goals_against']} {match_row['opponent']}"
+        result_color = {"Win": "🟢", "Draw": "🟡", "Loss": "🔴"}.get(match_row["result"], "⚫")
+        st.markdown(f"**{result_color} {result_text}**")
+        st.markdown(f"**Result:** {match_row['result']}")
+
+    st.divider()
+
+    # KPI Explanations
+    st.markdown("## 📊 Key Performance Indicators (Simple Explanation)")
+
+    kpi_explanations = {
+        "Goals": {
+            "value": match_row["goals_for"],
+            "icon": "⚽",
+            "simple": "Number of times we scored",
+            "why_matters": "More goals = more likely to win",
+            "good_level": f"> {int(match_row['goals_for'] + 1)}"
+        },
+        "Total xG (Expected Goals)": {
+            "value": f"{total_xg:.2f}",
+            "icon": "🎯",
+            "simple": "Quality of our shots (0-1 scale per shot)",
+            "why_matters": "Shows if we had good scoring chances (not lucky)",
+            "good_level": "> 1.5"
+        },
+        "Shots": {
+            "value": n_shots,
+            "icon": "💥",
+            "simple": "Total times we tried to score",
+            "why_matters": "More attempts = more chances to score",
+            "good_level": f"> {int(n_shots + 2)}"
+        },
+        "Possession": {
+            "value": f"{poss:.1f}%",
+            "icon": "🔵",
+            "simple": "How much we had the ball",
+            "why_matters": "More possession = better control of game",
+            "good_level": "> 50%"
+        },
+        "PPDA (Pressing)": {
+            "value": f"{ppda:.1f}",
+            "icon": "🔥",
+            "simple": f"How aggressively we defend (lower = more aggressive)",
+            "why_matters": "Aggressive pressing = less time for opponent",
+            "good_level": "< 10"
+        },
+    }
+
+    for title, info in kpi_explanations.items():
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown(f"### {info['icon']} {title}")
+            st.markdown(f"**Value:** {info['value']}")
+        with col2:
+            st.markdown(f"**What it means:** {info['simple']}")
+            st.markdown(f"**Why it matters:** {info['why_matters']}")
+            st.markdown(f"**Good level:** {info['good_level']}")
+        st.divider()
+
+    st.markdown("## 🎯 Critical Success Factors")
+
+    # CSF Analysis
+    csf_data = []
+
+    # CSF 1: Finishing (Goals vs xG)
+    xg_efficiency = (match_row["goals_for"] / total_xg * 100) if total_xg > 0 else 0
+    csf_data.append({
+        "CSF": "Finishing Quality",
+        "icon": "⚽",
+        "metric": f"Goals: {match_row['goals_for']} / xG: {total_xg:.2f}",
+        "explanation": "Did we score from our chances?",
+        "status": "🟢 GOOD" if match_row["goals_for"] >= total_xg * 0.5 else "🟡 OK" if match_row["goals_for"] >= total_xg * 0.2 else "🔴 POOR",
+    })
+
+    # CSF 2: Possession Control
+    csf_data.append({
+        "CSF": "Game Control",
+        "icon": "🔵",
+        "metric": f"Possession: {poss:.1f}%",
+        "explanation": "Did we control the game?",
+        "status": "🟢 GOOD" if poss > 55 else "🟡 OK" if poss > 45 else "🔴 POOR",
+    })
+
+    # CSF 3: Defensive Strength
+    csf_data.append({
+        "CSF": "Defensive Strength",
+        "icon": "🛡️",
+        "metric": f"PPDA: {ppda:.1f} (lower is better)",
+        "explanation": "How tight was our defense?",
+        "status": "🟢 GOOD" if ppda < 10 else "🟡 OK" if ppda < 13 else "🔴 POOR",
+    })
+
+    # CSF 4: Shot Efficiency
+    ot_pct = (ot_shots / n_shots * 100) if n_shots > 0 else 0
+    csf_data.append({
+        "CSF": "Shot Accuracy",
+        "icon": "🎯",
+        "metric": f"On Target: {ot_shots}/{n_shots} ({ot_pct:.0f}%)",
+        "explanation": "Did we aim well at goal?",
+        "status": "🟢 GOOD" if ot_pct > 50 else "🟡 OK" if ot_pct > 30 else "🔴 POOR",
+    })
+
+    st.markdown("### What Must Go Right to Win 👇")
+
+    for csf in csf_data:
+        col1, col2, col3 = st.columns([1.5, 2, 1.5])
+        with col1:
+            st.markdown(f"**{csf['icon']} {csf['CSF']}**")
+        with col2:
+            st.markdown(f"*{csf['explanation']}*")
+            st.code(csf['metric'], language=None)
+        with col3:
+            st.markdown(csf['status'])
+        st.markdown("---")
+
+    # Match Verdict
+    st.markdown("## 🏆 Match Verdict")
+
+    wins = sum([1 for csf in csf_data if "🟢" in csf["status"]])
+    total_csf = len(csf_data)
+
+    verdict_col1, verdict_col2 = st.columns([2, 1])
+    with verdict_col1:
+        st.markdown(f"### {wins}/{total_csf} Critical Factors Were Successful")
+        if match_row["result"] == "Win":
+            st.success(f"✅ **WON** - We did enough things right!")
+        elif match_row["result"] == "Draw":
+            st.info(f"🤝 **DREW** - Both teams were balanced")
+        else:
+            st.error(f"❌ **LOST** - Need to improve these areas")
+
+    with verdict_col2:
+        # Simple visualization
+        fig_verdict = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=wins,
+            domain={"x": [0, 1], "y": [0, 1]},
+            title={"text": "Success Rate"},
+            gauge={
+                "axis": {"range": [0, total_csf]},
+                "bar": {"color": COLORS["primary"]},
+                "steps": [
+                    {"range": [0, total_csf * 0.33], "color": COLORS["danger"]},
+                    {"range": [total_csf * 0.33, total_csf * 0.66], "color": COLORS["warning"]},
+                    {"range": [total_csf * 0.66, total_csf], "color": COLORS["success"]},
+                ],
+            },
+        ))
+        fig_verdict.update_layout(height=300, margin=dict(l=0, r=0, t=50, b=0),
+                                 paper_bgcolor=COLORS["bg"], font=dict(color=COLORS["text"]))
+        st.plotly_chart(fig_verdict, width="stretch")
+
+    st.divider()
+
+    st.markdown("""
+### 💡 Quick Tips to Understand Football Analytics
+
+1. **Goals are the result** - Everything else affects whether you score
+2. **xG shows luck** - If xG > Goals, you were unlucky. If Goals > xG, you were lucky
+3. **Possession doesn't guarantee wins** - But helps you control the game
+4. **Pressing is balance** - Too aggressive = exposed defense. Too passive = no pressure
+5. **Efficiency matters** - 1 great chance > 10 poor chances
+
+Think of it like a restaurant:
+- **CSF** = Must have: good food, clean place, friendly staff
+- **KPI** = Numbers we measure: customer count, profit, satisfaction score
+    """)
