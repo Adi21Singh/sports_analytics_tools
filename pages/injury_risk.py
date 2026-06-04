@@ -15,7 +15,7 @@ from ui.data_source import render_data_source_selector, get_data
 from analytics.load_monitoring import (
     calculate_acwr, calculate_pmc, calculate_monotony_strain, availability_pct
 )
-from analytics.risk_model import predict_squad_risk, FEATURE_IMPORTANCES
+from analytics.risk_model import predict_squad_risk
 from config import COLORS, PALETTE, ACWR_ZONES, acwr_zone
 
 styles.apply()
@@ -257,7 +257,7 @@ with tab4:
         mono_map  = {int(p["id"]): calculate_monotony_strain(training[training["player_id"]==p["id"]]["srpe"],
                                                               training[training["player_id"]==p["id"]]["date"])
                      for _, p in players.iterrows()}
-        risk_df = predict_squad_risk(players, training, wellness, acwr_map, mono_map)
+        risk_df, model_metrics = predict_squad_risk(players, training, wellness, acwr_map, mono_map)
 
     # Gauge for selected player
     sel_row = risk_df[risk_df["player_name"] == name]
@@ -304,8 +304,8 @@ with tab4:
     fig2.update_layout(title="Top 15 — Predicted Injury Risk", margin=dict(l=150))
     st.plotly_chart(fig2, width="stretch")
 
-    # Feature importances
-    fi = FEATURE_IMPORTANCES.sort_values("Importance")
+    # Feature importances — from the fitted model, not hardcoded
+    fi = model_metrics["feature_importances"].sort_values("Importance")
     fig3 = go.Figure(go.Bar(
         x=fi["Importance"], y=fi["Feature"],
         orientation="h", marker_color=PALETTE[:len(fi)],
@@ -313,5 +313,20 @@ with tab4:
     ))
     fig3 = style_chart(fig3, height=260,
                        xaxis=dict(title="Relative Importance", gridcolor=COLORS["grid"]))
-    fig3.update_layout(title="Random Forest Feature Importances")
+    fig3.update_layout(title="Random Forest Feature Importances (fitted model)")
     st.plotly_chart(fig3, width="stretch")
+
+    # Model validation metrics
+    st.markdown("**Model validation (held-out 30% test set)**")
+    cols = st.columns(5)
+    cols[0].metric("AUC-ROC",   f"{model_metrics['test_auc']:.3f}")
+    cols[1].metric("Precision", f"{model_metrics['test_precision']:.3f}")
+    cols[2].metric("Recall",    f"{model_metrics['test_recall']:.3f}")
+    cols[3].metric("F1",        f"{model_metrics['test_f1']:.3f}")
+    cols[4].metric("CV AUC",    f"{model_metrics['cv_auc_mean']:.3f} ±{model_metrics['cv_auc_std']:.3f}")
+    st.caption(
+        f"Trained on {model_metrics['n_train']:,} synthetic samples · "
+        f"tested on {model_metrics['n_test']:,} held-out samples · "
+        "⚠️ Metrics reflect recovery of the synthetic generating function, "
+        "not real-world predictive validity."
+    )

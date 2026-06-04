@@ -1,9 +1,27 @@
-"""Training load analytics: ACWR, PMC (CTL/ATL/TSB), monotony, strain."""
+"""Training load analytics: ACWR, PMC (CTL/ATL/TSB), monotony, strain.
+
+ACWR methodology note
+---------------------
+The original Gabbett (2016) rolling-average ACWR has a mathematical coupling
+problem: the acute window is a subset of the chronic window, which inflates
+their correlation and distorts the ratio (Carey et al. 2017, Windt & Gabbett
+2017).  The preferred solution is to compute acute and chronic loads as
+*independent* exponentially-weighted moving averages (EWMA) on the raw daily
+load series.  This is the default here (calculate_acwr).  The old rolling-
+average version is preserved as calculate_acwr_rolling for reference.
+"""
 
 from __future__ import annotations
 import numpy as np
 import pandas as pd
 from config import acwr_zone
+
+
+def _build_daily(load: pd.Series, dates: pd.Series) -> pd.Series:
+    df = pd.DataFrame({"date": pd.to_datetime(dates), "load": load})
+    df = df.groupby("date")["load"].sum().reset_index()
+    date_range = pd.date_range(df["date"].min(), df["date"].max(), freq="D")
+    return df.set_index("date")["load"].reindex(date_range, fill_value=0)
 
 
 def calculate_acwr(
@@ -13,15 +31,48 @@ def calculate_acwr(
     chronic_days: int = 28,
 ) -> pd.DataFrame:
     """
-    Compute Acute:Chronic Workload Ratio (Gabbett 2016).
+    Compute ACWR using *uncoupled* EWMA (Windt & Gabbett 2017).
 
-    Returns a daily DataFrame with columns:
-      date, daily_load, acute_load, chronic_load, acwr, risk_zone
+    Acute and chronic loads are derived from independent exponential moving
+    averages of the same daily load series, eliminating the mathematical
+    coupling present in the rolling-average formulation.
+
+    Returns a daily DataFrame:
+      date, daily_load, acute_load, chronic_load, acwr, risk_zone, method
     """
-    df = pd.DataFrame({"date": pd.to_datetime(dates), "load": load})
-    df = df.groupby("date")["load"].sum().reset_index()
-    date_range = pd.date_range(df["date"].min(), df["date"].max(), freq="D")
-    daily = df.set_index("date")["load"].reindex(date_range, fill_value=0)
+    daily = _build_daily(load, dates)
+
+    # Independent EWMA — span ≈ 2*days - 1  →  half-life ≈ days
+    acute   = daily.ewm(span=acute_days,   adjust=False).mean()
+    chronic = daily.ewm(span=chronic_days, adjust=False).mean()
+    ratio   = (acute / chronic.replace(0, np.nan)).fillna(0)
+
+    result = pd.DataFrame({
+        "date":         daily.index,
+        "daily_load":   daily.values,
+        "acute_load":   acute.values.round(1),
+        "chronic_load": chronic.values.round(1),
+        "acwr":         ratio.values.round(3),
+    })
+    result["risk_zone"] = result["acwr"].map(acwr_zone)
+    result["method"]    = "Uncoupled EWMA"
+    return result
+
+
+def calculate_acwr_rolling(
+    load: pd.Series,
+    dates: pd.Series,
+    acute_days: int = 7,
+    chronic_days: int = 28,
+) -> pd.DataFrame:
+    """
+    Original Gabbett (2016) rolling-average ACWR — kept for comparison.
+
+    NOTE: This method has mathematical coupling (acute is a subset of chronic)
+    which inflates correlation and can distort risk classification.
+    Prefer calculate_acwr() for operational use.
+    """
+    daily = _build_daily(load, dates)
 
     acute   = daily.rolling(acute_days,   min_periods=1).mean()
     chronic = daily.rolling(chronic_days, min_periods=1).mean()
@@ -30,11 +81,12 @@ def calculate_acwr(
     result = pd.DataFrame({
         "date":         daily.index,
         "daily_load":   daily.values,
-        "acute_load":   acute.values,
-        "chronic_load": chronic.values,
-        "acwr":         ratio.values,
+        "acute_load":   acute.values.round(1),
+        "chronic_load": chronic.values.round(1),
+        "acwr":         ratio.values.round(3),
     })
     result["risk_zone"] = result["acwr"].map(acwr_zone)
+    result["method"]    = "Coupled Rolling Avg (Gabbett 2016)"
     return result
 
 

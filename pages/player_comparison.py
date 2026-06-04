@@ -93,45 +93,73 @@ with tab1:
 with tab2:
     section_header("Head-to-Head Statistical Comparison", icon="📊")
 
-    all_metrics = [
-        "goals", "assists", "xg", "xa", "shots", "passes",
-        "pass_completion", "progressive_passes", "key_passes", "dribbles_won",
-        "tackles_won", "pressures", "aerial_duels_won", "touches_in_box",
-        "distance_m", "hsr_m", "sprint_count", "max_speed_kmh", "match_rating",
-    ]
+    # ── Per-90 normalisation note ──────────────────────────────────────────────
+    # All counting stats are shown per-90 minutes to remove the bias of a
+    # substitute (15 min) appearing alongside a starter (90 min) in raw totals.
+    # Season totals are shown only for goals, assists, xG, and xA where
+    # accumulated volume is meaningful.  Rate stats (pass %, max speed, rating)
+    # are averaged directly.
+    # Reference: any volume metric without per-90 scaling will favour the player
+    # with more minutes — this was flagged as a methodological gap in review.
+
+    # Per-90 columns exist from compute_derived_kpis; add remaining ones here
+    COUNTING_STATS = ["shots", "key_passes", "progressive_passes", "dribbles_won",
+                      "tackles_won", "pressures", "aerial_duels_won", "touches_in_box",
+                      "distance_m", "hsr_m", "sprint_count"]
+
+    def per90_mean(pm: pd.DataFrame, col: str) -> float:
+        """Average per-90 value: sum(col) / sum(minutes) * 90."""
+        mins = pm["minutes_played"].sum()
+        if mins < 1:
+            return 0.0
+        return round(float(pm[col].sum()) / mins * 90, 2)
+
+    # Build display including both season totals and per-90 rates
+    SEASON_TOTAL_COLS = ["goals", "assists", "xg", "xa"]
+    RATE_COLS = ["pass_completion", "max_speed_kmh", "match_rating"]
+
+    all_metrics_p90  = [f"{c}_p90" for c in COUNTING_STATS]
+    all_metrics_disp = SEASON_TOTAL_COLS + [f"{c} p90" for c in COUNTING_STATS] + RATE_COLS
 
     rows = {}
     for pid, pname in zip(pids, selected):
         pm = match_players[match_players["player_id"] == pid]
         if pm.empty: continue
         agg = {}
-        for m in all_metrics:
-            if m in ["goals", "assists"]:
-                agg[m] = round(float(pm[m].sum()), 1)
-            else:
-                agg[m] = round(float(pm[m].mean()), 2)
+        for c in SEASON_TOTAL_COLS:
+            agg[c] = round(float(pm[c].sum()), 1)
+        for c in COUNTING_STATS:
+            agg[f"{c} p90"] = per90_mean(pm, c)
+        for c in RATE_COLS:
+            agg[c] = round(float(pm[c].mean()), 2)
+        agg["Minutes Played"] = int(pm["minutes_played"].sum())
+        agg["Appearances"]    = len(pm)
         rows[pname] = agg
 
     if rows:
-        display_df = pd.DataFrame(rows).T.astype(float)
+        display_df = pd.DataFrame(rows).T
         display_df.index.name = "Player"
-        rename = {m: m.replace("_m","").replace("_"," ").title() for m in all_metrics}
-        display_df.columns = [rename.get(c, c) for c in display_df.columns]
         st.dataframe(display_df, width="stretch")
 
-        # Grouped bar chart — key metrics
+        # Grouped bar chart — key metrics (all per-90 except totals)
         key_m = {
-            "Goals (total)":   "goals",      "Assists (total)": "assists",
-            "xG (total)":      "xg",         "Shots/match":     "shots",
-            "Key Passes/match":"key_passes",  "Dribbles Won":    "dribbles_won",
-            "Tackles Won":     "tackles_won", "Match Rating":    "match_rating",
+            "Goals":            ("goals",         "total"),
+            "Assists":          ("assists",        "total"),
+            "xG":               ("xg",             "total"),
+            "Shots p90":        ("shots",          "p90"),
+            "Key Passes p90":   ("key_passes",     "p90"),
+            "Dribbles Won p90": ("dribbles_won",   "p90"),
+            "Tackles Won p90":  ("tackles_won",    "p90"),
+            "Match Rating":     ("match_rating",   "rate"),
         }
         long = []
         for pid, pname in zip(pids, selected):
             pm = match_players[match_players["player_id"] == pid]
             if pm.empty: continue
-            for label, col in key_m.items():
-                val = float(pm[col].sum()) if col in ["goals","assists","xg"] else float(pm[col].mean())
+            for label, (col, mode) in key_m.items():
+                if   mode == "total": val = float(pm[col].sum())
+                elif mode == "p90":   val = per90_mean(pm, col)
+                else:                 val = float(pm[col].mean())
                 long.append({"Player": pname, "Metric": label, "Value": round(val, 2)})
 
         long_df = pd.DataFrame(long)

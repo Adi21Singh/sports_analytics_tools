@@ -177,9 +177,18 @@ def build_wellness(players: pd.DataFrame, training: pd.DataFrame, seed: int = 42
             mood    = float(np.clip(np.random.normal(7.5 - fatigue * 0.3, 0.8), 2, 10))
             stress  = float(np.clip(np.random.normal(4.0, 1.2), 1, 10))
 
-            # Composite: higher = better readiness (inverts fatigue/soreness/stress)
+            # Weighted composite — literature-based weights (McLean et al. 2010,
+            # Hooper & Mackinnon 1995).  Sleep quality and fatigue are the
+            # strongest next-day performance predictors; mood and stress carry
+            # less predictive weight.  Equal weighting (1/5 each) was replaced
+            # with: sleep 0.30, fatigue 0.30, soreness 0.20, mood 0.10, stress 0.10
             composite = round(
-                (sleep + (10 - fatigue) + (10 - soreness) + mood + (10 - stress)) / 5, 1
+                0.30 * sleep
+                + 0.30 * (10 - fatigue)
+                + 0.20 * (10 - soreness)
+                + 0.10 * mood
+                + 0.10 * (10 - stress),
+                1,
             )
             rows.append({
                 "player_id":    pid,

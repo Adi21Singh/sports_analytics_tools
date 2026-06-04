@@ -9,6 +9,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Initialise session defaults ONCE before any page runs ─────────────────────
+# This is the only place defaults are set.  All pages read from session_state
+# so navigating between tabs never resets the team selection.
+if "squad_filter" not in st.session_state:
+    st.session_state["squad_filter"] = "Arsenal"   # sensible first-run default
+# NOTE: do NOT pre-set "uploaded_csv" here — Streamlit raises
+# StreamlitValueAssignmentNotAllowedError if you pre-assign file_uploader keys
+
 pages = {
     "Overview": [
         st.Page("pages/dashboard.py",          title="Dashboard",          icon="🏠"),

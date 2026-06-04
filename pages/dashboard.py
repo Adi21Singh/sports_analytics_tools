@@ -23,9 +23,7 @@ with st.sidebar:
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 # ── Header ────────────────────────────────────────────────────────────────────
-_squad = st.session_state.get("squad_filter")
-_mode  = st.session_state.get("data_mode", "Demo Data")
-_title = _squad if (_mode == "Real Data (FBref 25/26)" and _squad) else TEAM_NAME
+_title = st.session_state.get("squad_filter") or TEAM_NAME
 st.title(f"⚽ {_title}")
 st.caption("2025/26 Season · Sports Analytics Platform")
 

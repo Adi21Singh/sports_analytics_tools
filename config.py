@@ -58,6 +58,18 @@ WELLNESS_LABELS = {
     "stress_score":   "Stress (inv.)",
 }
 
+# Wellness composite weights — McLean et al. (2010), Hooper & Mackinnon (1995)
+# Sleep quality and subjective fatigue are the strongest predictors of next-day
+# performance and injury risk.  Equal weighting (0.2 each) was the original
+# error — replaced with evidence-based differential weighting.
+WELLNESS_WEIGHTS = {
+    "sleep_score":    0.30,   # inverted: higher sleep = higher readiness
+    "fatigue_score":  0.30,   # inverted: lower fatigue = higher readiness
+    "soreness_score": 0.20,   # inverted: lower soreness = higher readiness
+    "mood_score":     0.10,   # direct: higher mood = higher readiness
+    "stress_score":   0.10,   # inverted: lower stress = higher readiness
+}
+
 # ── Position profiles ─────────────────────────────────────────────────────────
 # Each key maps to a dict of (mean, std) per metric for a match (~90 min).
 # Scaling factors per session_type are applied in the generator.

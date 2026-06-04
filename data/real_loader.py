@@ -70,11 +70,14 @@ def _rng_int(mean: float, std: float, lo: int = 0) -> int:
     return int(max(lo, round(np.random.normal(mean, std))))
 
 
-def _compute_xg(shot_x: float, shot_y: float) -> float:
-    goal_x, goal_y = PITCH_LEN, PITCH_WID / 2
-    dist  = np.sqrt((shot_x - goal_x) ** 2 + (shot_y - goal_y) ** 2)
-    angle = np.arctan2(7.32 * dist, dist ** 2 + (shot_x - goal_x) ** 2 - 3.66 ** 2)
-    return float(np.clip(1 / (1 + np.exp(0.2 + 0.06 * dist - 2.5 * abs(angle))), 0.01, 0.95))
+def _compute_xg(shot_x: float, shot_y: float,
+                is_header: bool = False, is_penalty: bool = False,
+                under_pressure: bool = False) -> float:
+    """Use the calibrated xG model from analytics.performance."""
+    from analytics.performance import compute_xg
+    return compute_xg(shot_x, shot_y, PITCH_LEN, PITCH_WID,
+                      is_header=is_header, is_penalty=is_penalty,
+                      under_pressure=under_pressure)
 
 
 # ── Step 1: load and clean the raw CSV ────────────────────────────────────────
