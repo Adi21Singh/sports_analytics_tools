@@ -1,591 +1,708 @@
-"""Match Analysis — shot map, xG timeline, pressing stats, player ratings."""
+"""
+Match Analysis — La Liga 2015/16 (StatsBomb)
+============================================
+Shot map · xG timeline (both teams) · Press breakdown.
 
+StatsBomb coordinate notes
+--------------------------
+Events are stored in a team-relative coordinate system: x=0 is own goal,
+x=120 is the opponent's goal.  All shot x values therefore cluster near
+x=120 regardless of period or team — no direction-flip is needed.
+Pressures span 0–120 because they happen across the full pitch.
+Scale to pitch drawing: x_plot = x * 105/120, y_plot = y * 68/80.
+
+Shot outcome strings from StatsBomb open data:
+  'Goal', 'Saved', 'Blocked', 'Off T', 'Wayward', 'Post'
+  on_target  ← {'Goal', 'Saved'}
+  goal       ← {'Goal'}
+"""
+
+from __future__ import annotations
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import streamlit as st
 import plotly.graph_objects as go
-import plotly.express as px
 import pandas as pd
 import numpy as np
 
 import ui.styles as styles
-from ui.components import kpi_card, kpi_row, section_header, style_chart, draw_pitch, info_box, create_3d_kpi_dashboard
-from ui.data_source import render_data_source_selector, get_data
-from analytics.performance import compute_derived_kpis
-from config import COLORS, PALETTE
+from ui.components import kpi_card, kpi_row, section_header, style_chart, draw_pitch, info_box
+from config import COLORS
+
+from analytics.press_engine import (
+    load_sb_matches,
+    load_match_events,
+    SB_AVAILABLE,
+    SB_PITCH_LEN,
+    SB_PITCH_WID,
+)
 
 styles.apply()
 
-# ── Sidebar phase 1 — data source ────────────────────────────────────────────
+# ── StatsBomb availability guard ──────────────────────────────────────────────
+if not SB_AVAILABLE:
+    st.error(
+        "**statsbombpy is not installed.**  "
+        "Run `pip install statsbombpy` and restart."
+    )
+    st.stop()
+
+# ── Cache wrappers ────────────────────────────────────────────────────────────
+@st.cache_data(show_spinner="Loading La Liga 2015/16 matches…")
+def _cached_matches() -> pd.DataFrame:
+    return load_sb_matches()
+
+
+@st.cache_data(show_spinner="Loading match events…")
+def _cached_events(match_id: int) -> pd.DataFrame:
+    return load_match_events(match_id)
+
+
+# ── Team name extraction (handles dict or plain string) ───────────────────────
+def _tn(val) -> str:
+    if isinstance(val, dict):
+        for k in ("home_team_name", "away_team_name", "name"):
+            if k in val:
+                return val[k]
+    return str(val) if pd.notna(val) else ""
+
+
+# ── Load La Liga 2015/16 matches ──────────────────────────────────────────────
+try:
+    matches_df = _cached_matches()
+except Exception as exc:
+    st.error(f"Could not load La Liga 2015/16 matches: {exc}")
+    st.stop()
+
+if matches_df.empty:
+    st.warning("No matches found for La Liga 2015/16.")
+    st.stop()
+
+matches_df["_home"] = matches_df.get(
+    "home_team", pd.Series("", index=matches_df.index)
+).apply(_tn)
+matches_df["_away"] = matches_df.get(
+    "away_team", pd.Series("", index=matches_df.index)
+).apply(_tn)
+
+
+def _match_label(row) -> str:
+    date = str(row.get("match_date", row.get("match_week", "")))
+    hs   = row.get("home_score", "?")
+    as_  = row.get("away_score", "?")
+    return f"{row['_home']}  {hs}–{as_}  {row['_away']}  [{date}]"
+
+
+matches_df["_label"] = matches_df.apply(_match_label, axis=1)
+
 with st.sidebar:
     st.markdown("### ⚽ Match Analysis")
-    render_data_source_selector()
+    st.caption("StatsBomb open data · La Liga 2015/16")
+    selected_label = st.selectbox("Select Match", matches_df["_label"].tolist(), key="ma_match")
+    sel_row    = matches_df[matches_df["_label"] == selected_label].iloc[0]
+    home_team  = sel_row["_home"]
+    away_team  = sel_row["_away"]
+    match_id   = int(sel_row["match_id"])
 
-players, training, wellness, matches, match_players, events = get_data()
-match_players = compute_derived_kpis(match_players)
+    # Scores – guard against NaN (some postponed/walkover matches)
+    def _safe_int(v, default=0) -> int:
+        try:
+            return int(v) if pd.notna(v) else default
+        except (TypeError, ValueError):
+            return default
 
-# ── Sidebar phase 2 — match / position controls ───────────────────────────────
-with st.sidebar:
-    labels = [f"M{r['match_id']:02d}  vs {r['opponent']}  ({r['result']})"
-              for _, r in matches.sort_values("date").iterrows()]
-    sel = st.selectbox("Select Match", labels)
-    mid = int(sel.split("M")[1].split(" ")[0])
+    home_score = _safe_int(sel_row.get("home_score"))
+    away_score = _safe_int(sel_row.get("away_score"))
 
-    # Default to showing all attacking positions
-    available_pos = sorted(players["position"].unique().tolist())
-    default_pos = [p for p in available_pos if p in ['ST', 'LW', 'RW', 'CAM', 'CM']]
+    our_team      = st.radio("Analyse press for:", [home_team, away_team])
+    opponent_team = away_team if our_team == home_team else home_team
 
-    pos_filter = st.multiselect(
-        "Filter Shot Map by Position",
-        available_pos,
-        default=default_pos,
-        help="Select positions to see their shots. Defaults to attacking players (ST, LW, RW, CAM, CM)"
+# ── Load events ───────────────────────────────────────────────────────────────
+try:
+    ev = _cached_events(match_id)
+except Exception as exc:
+    st.error(f"Could not load events for match {match_id}: {exc}")
+    st.stop()
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+_SX = 105.0 / SB_PITCH_LEN   # 120 → 105
+_SY = 68.0  / SB_PITCH_WID   # 80  → 68
+
+_ON_TARGET  = {"Goal", "Saved"}
+_SHOT_TYPES = {"Pressure", "Interception", "Tackle", "Ball Recovery"}
+
+
+# ── Data-extraction helpers ───────────────────────────────────────────────────
+
+def _safe_str(v, fallback: str = "Unknown") -> str:
+    """Return string value, replacing NaN/None with fallback."""
+    if isinstance(v, str):
+        return v if v not in ("", "nan", "NaN") else fallback
+    try:
+        if pd.isna(v):
+            return fallback
+    except Exception:
+        pass
+    return str(v)
+
+
+def _extract_shots(team: str) -> pd.DataFrame:
+    """
+    Return shot rows for *team* with derived columns:
+      goal, on_target, xg (float, 0 if missing), x_plot, y_plot.
+
+    Empty DataFrame returned when: ev is empty, no shot col, or no shots exist.
+    """
+    if ev.empty or "type_name" not in ev.columns:
+        return pd.DataFrame()
+
+    mask  = (ev["type_name"] == "Shot") & (ev["team_name"] == team)
+    shots = ev[mask].copy()
+
+    if shots.empty:
+        return pd.DataFrame()
+
+    # Flat StatsBomb columns (already parsed by press_engine._normalise_events)
+    shots["xg"] = pd.to_numeric(
+        shots.get("shot_statsbomb_xg", pd.Series(np.nan, index=shots.index)),
+        errors="coerce",
+    ).fillna(0.0)
+
+    shots["outcome"] = shots.get(
+        "shot_outcome", pd.Series("Unknown", index=shots.index)
+    ).fillna("Unknown").astype(str)
+
+    shots["goal"]      = shots["outcome"] == "Goal"
+    shots["on_target"] = shots["outcome"].isin(_ON_TARGET)
+
+    # Body part / technique (nice-to-have; might be absent on older cache)
+    for col in ("shot_body_part", "shot_technique", "shot_type"):
+        shots[col] = shots.get(col, pd.Series("", index=shots.index)).fillna("")
+
+    # Player name is already a plain string in the StatsBomb flat export
+    shots["player_name"] = (
+        shots["player"].apply(lambda v: _safe_str(v))
+        if "player" in shots.columns else "Unknown"
     )
 
-match_row  = matches[matches["match_id"] == mid].iloc[0]
-mp         = match_players[match_players["match_id"] == mid]
-ev         = events[events["match_id"] == mid] if not events.empty else pd.DataFrame()
+    # Position may be NaN for some events
+    shots["position"] = (
+        shots["position"].fillna("Unknown")
+        if "position" in shots.columns else "Unknown"
+    )
 
-# Filter by selected positions (always apply filter if data exists)
-if not ev.empty and pos_filter:
-    shots = ev[ev["position"].isin(pos_filter)].copy()
-else:
-    shots = ev.copy() if not ev.empty else pd.DataFrame()
+    # Coordinates → pitch drawing space; drop rows missing coordinates
+    shots = shots.dropna(subset=["x", "y"])
+    shots["x_plot"] = shots["x"] * _SX
+    shots["y_plot"] = shots["y"] * _SY
 
-# ── Header ────────────────────────────────────────────────────────────────────
-result_color = {"Win": COLORS["success"], "Draw": COLORS["warning"], "Loss": COLORS["danger"]}
-res_col = result_color.get(match_row["result"], COLORS["muted"])
+    return shots.reset_index(drop=True)
 
+
+def _extract_press(team: str) -> pd.DataFrame:
+    """
+    Return defensive-action rows (Pressure/Interception/Tackle/Ball Recovery)
+    for *team*.  Rows missing x or y are kept but flagged; callers decide
+    whether to drop them for spatial charts.
+    """
+    if ev.empty or "type_name" not in ev.columns:
+        return pd.DataFrame()
+
+    mask     = ev["type_name"].isin(_SHOT_TYPES) & (ev["team_name"] == team)
+    press_ev = ev[mask].copy()
+
+    if press_ev.empty:
+        return pd.DataFrame()
+
+    press_ev["player_name"] = (
+        press_ev["player"].apply(lambda v: _safe_str(v))
+        if "player" in press_ev.columns else "Unknown"
+    )
+    press_ev["position"] = (
+        press_ev["position"].fillna("Unknown")
+        if "position" in press_ev.columns else "Unknown"
+    )
+
+    press_ev["has_xy"] = press_ev["x"].notna() & press_ev["y"].notna()
+
+    # Pre-compute plot coords for rows that have them
+    with_xy = press_ev["has_xy"]
+    press_ev.loc[with_xy, "x_plot"] = press_ev.loc[with_xy, "x"] * _SX
+    press_ev.loc[with_xy, "y_plot"] = press_ev.loc[with_xy, "y"] * _SY
+
+    return press_ev.reset_index(drop=True)
+
+
+def _approx_possession(team: str) -> float:
+    """Approximate possession % from poss_team_name event counts."""
+    if ev.empty or "poss_team_name" not in ev.columns:
+        return 50.0
+    denom = ev["poss_team_name"].isin([home_team, away_team]).sum()
+    if denom == 0:
+        return 50.0
+    return round(float((ev["poss_team_name"] == team).sum() / denom * 100), 1)
+
+
+# ── Extract for this match ────────────────────────────────────────────────────
+home_shots = _extract_shots(home_team)
+away_shots = _extract_shots(away_team)
+press_ev   = _extract_press(our_team)
+
+home_xg  = float(home_shots["xg"].sum()) if not home_shots.empty else 0.0
+away_xg  = float(away_shots["xg"].sum()) if not away_shots.empty else 0.0
+poss_h   = _approx_possession(home_team)
+
+# ── Page header ───────────────────────────────────────────────────────────────
 st.title("⚽ Match Analysis")
+_ct = COLORS["text"]
+_cm = COLORS["muted"]
+match_date = str(sel_row.get("match_date", ""))
 st.markdown(
-    f"<h3 style='color:{COLORS['text']};'>"
-    f"{match_row['home_away']} vs <b>{match_row['opponent']}</b></h3>"
-    f"<span style='color:{COLORS['muted']};font-size:.9rem;'>"
-    f"{match_row['date'].strftime('%d %b %Y')}</span>"
-    f"  <span style='font-size:1.5rem; font-weight:700; color:{res_col};'>"
-    f"{match_row['goals_for']} – {match_row['goals_against']}</span>"
-    f"  <span style='color:{res_col};font-size:.9rem;'>({match_row['result']})</span>",
+    f"<h3 style='color:{_ct};'>"
+    f"<b>{home_team}</b> &nbsp; {home_score} – {away_score} &nbsp; <b>{away_team}</b>"
+    f"</h3>"
+    f"<span style='color:{_cm};font-size:.9rem;'>La Liga 2015/16 &nbsp;·&nbsp; {match_date}"
+    f" &nbsp;·&nbsp; Analysing press: <b style='color:{_ct};'>{our_team}</b></span>",
     unsafe_allow_html=True,
 )
 st.divider()
 
-# ── KPIs ──────────────────────────────────────────────────────────────────────
-total_xg = float(shots["xg"].sum()) if not shots.empty else 0.0
-n_shots  = len(shots)
-ot_shots = int(shots["on_target"].sum()) if not shots.empty else 0
-avg_rat  = mp["match_rating"].mean() if not mp.empty else 0.0
-poss     = match_row["possession_pct"]
-ppda     = match_row["ppda"]
-
+# ── Top KPIs ─────────────────────────────────────────────────────────────────
+_h = home_team[:14]
+_a = away_team[:14]
 kpi_row([
-    kpi_card("Goals",       match_row["goals_for"],   accent=COLORS["success"]),
-    kpi_card("Total xG",    f"{total_xg:.2f}",        accent=COLORS["primary"]),
-    kpi_card("Shots",       n_shots,                  accent=COLORS["secondary"]),
-    kpi_card("On Target",   ot_shots,                 accent=COLORS["warning"]),
-    kpi_card("Possession",  f"{poss:.1f}%",           accent=COLORS["primary"]),
-    kpi_card("PPDA",        f"{ppda:.1f}",            sub="lower = more pressing", accent=COLORS["danger"]),
-    kpi_card("Avg Rating",  f"{avg_rat:.2f}",         accent=COLORS["success"]),
+    kpi_card(f"{_h} xG",    f"{home_xg:.2f}",  sub=f"{home_score} goal(s)",    accent=COLORS["primary"]),
+    kpi_card(f"{_a} xG",    f"{away_xg:.2f}",  sub=f"{away_score} goal(s)",    accent=COLORS["secondary"]),
+    kpi_card(f"{_h} shots", len(home_shots),                                    accent=COLORS["warning"]),
+    kpi_card(f"{_a} shots", len(away_shots),                                    accent=COLORS["warning"]),
+    kpi_card("Possession",  f"{poss_h:.0f}%",  sub=f"{_h} / {100-poss_h:.0f}% {_a}",
+             accent=COLORS["primary"]),
+    kpi_card("Press events", len(press_ev),    sub=f"{our_team[:14]}",         accent=COLORS["success"]),
 ])
 st.markdown("<br>", unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    ["🗺️ Shot Map", "📈 xG Timeline", "👤 Player Ratings", "📊 Match Stats", "🎯 3D KPI Dashboard", "💡 CSF & KPI Guide"])
+tab_shot, tab_xg, tab_press = st.tabs(
+    ["🗺️ Shot Map", "📈 xG Timeline", "🔥 Press Analysis"]
+)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SHOT MAP
+# TAB 1 — SHOT MAP
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab1:
+with tab_shot:
     section_header("Shot Map", icon="🗺️",
-                   subtitle="Attacking left → right · Goal at x=105 · Bubble size = xG value")
+                   subtitle="StatsBomb coordinates — team always attacks toward x=105 · bubble = xG")
 
-    # Show info about filtering
-    if pos_filter:
-        st.info(f"📍 Showing shots from: {', '.join(pos_filter)} ({len(shots)} shots)")
+    # Team selector
+    shot_team_choice = st.radio(
+        "Show shots for:", [home_team, away_team, "Both teams"],
+        horizontal=True, key="shot_team_radio",
+    )
+
+    if shot_team_choice == home_team:
+        shots_to_show = [(home_shots, home_team, COLORS["primary"])]
+    elif shot_team_choice == away_team:
+        shots_to_show = [(away_shots, away_team, COLORS["secondary"])]
     else:
-        st.warning("No positions selected. Select at least one position in the sidebar.")
+        shots_to_show = [
+            (home_shots, home_team, COLORS["primary"]),
+            (away_shots, away_team, COLORS["secondary"]),
+        ]
 
     fig = draw_pitch()
 
-    if not shots.empty:
-        for subset, label, color, symbol in [
-            (shots[shots["goal"] == True],      "Goal",       COLORS["success"], "star"),
-            (shots[(shots["on_target"]) & (~shots["goal"])], "On Target", COLORS["warning"], "circle"),
-            (shots[~shots["on_target"]],         "Off Target", COLORS["danger"],  "x"),
+    any_shots = False
+    for shot_df, team_label, team_color in shots_to_show:
+        if shot_df.empty:
+            continue
+        any_shots = True
+
+        # Build per-outcome colour/symbol; use team colour + shape variations
+        for outcome_mask, label_suffix, alpha, symbol in [
+            (shot_df["goal"],                                     "Goal",       1.0,  "star"),
+            (~shot_df["goal"] & shot_df["on_target"],             "On Target",  0.85, "circle"),
+            (~shot_df["on_target"] & shot_df["outcome"].isin({"Blocked", "Post"}),
+                                                                  "Blocked/Post", 0.65, "diamond"),
+            (shot_df["outcome"].isin({"Off T", "Wayward"}),      "Off Target", 0.45, "x"),
         ]:
-            if subset.empty: continue
+            sub = shot_df[outcome_mask]
+            if sub.empty:
+                continue
 
-            hover_texts = []
-            for _, r in subset.iterrows():
-                text = f"<b>{r['player_name']}</b><br>"
-                text += f"Position: {r['position']}<br>"
-                text += f"Minute: {r['minute']}<br>"
-                text += f"xG: {r['xg']:.3f}<br>"
-                text += f"Location: ({r['x']:.1f}, {r['y']:.1f})<br>"
-                if r['on_target']:
-                    text += "Status: On Target"
-                else:
-                    text += "Status: Off Target"
-                if r['goal']:
-                    text += " ⚽ GOAL"
-                hover_texts.append(text)
-
-            # Calculate bubble sizes with better scaling
-            # Min size 12, max size 50 based on xG value
-            sizes = (subset["xg"] * 35).clip(lower=12) + 8
+            hover = [
+                f"<b>{r['player_name']}</b><br>"
+                f"Team: {team_label}<br>"
+                f"Min: {r.get('minute', '?')}<br>"
+                f"xG: {r['xg']:.3f}<br>"
+                f"Outcome: {r['outcome']}<br>"
+                f"Technique: {r.get('shot_technique', '')}<br>"
+                f"Body part: {r.get('shot_body_part', '')}"
+                for _, r in sub.iterrows()
+            ]
+            sizes = (sub["xg"] * 35).clip(lower=10) + 7
 
             fig.add_trace(go.Scatter(
-                x=subset["x"], y=subset["y"], mode="markers", name=label,
+                x=sub["x_plot"], y=sub["y_plot"],
+                mode="markers",
+                name=f"{team_label} — {label_suffix}",
                 marker=dict(
-                    size=sizes,
-                    color=color, symbol=symbol, opacity=0.85,
-                    line=dict(width=2, color=COLORS["bg"]),
+                    size=sizes, color=team_color,
+                    symbol=symbol, opacity=alpha,
+                    line=dict(width=1.5, color=COLORS["bg"]),
                 ),
-                text=hover_texts,
+                text=hover,
                 hovertemplate="%{text}<extra></extra>",
             ))
-    st.plotly_chart(fig, width="stretch")
 
-    if not shots.empty:
-        # Shot summary
-        goals_count = int(shots["goal"].sum())
-        on_target_count = int(shots["on_target"].sum())
-        off_target_count = len(shots) - on_target_count
+    if not any_shots:
+        st.info("No shot data available for the selected team(s) in this match.")
 
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Shots", len(shots))
-        with col2:
-            st.metric("Goals ⚽", goals_count)
-        with col3:
-            st.metric("On Target 🎯", on_target_count)
-        with col4:
-            st.metric("Off Target ❌", off_target_count)
+    st.plotly_chart(fig, width='stretch')
 
-        st.subheader("Shot Details Table")
-        shot_tbl = shots[["player_name","position","minute","xg","on_target","goal"]].copy()
-        shot_tbl.columns = ["Player","Position","Minute","xG","On Target","Goal"]
-        shot_tbl = shot_tbl.sort_values("Minute").reset_index(drop=True)
+    # Summary metrics + detail table
+    for shot_df, team_label, _ in shots_to_show:
+        if shot_df.empty:
+            st.caption(f"{team_label}: no shots recorded.")
+            continue
 
-        # Color code the table based on shot result
-        def color_row(row):
-            if row['Goal']:
-                return ['background-color: #1a3a1a'] * len(row)
-            elif row['On Target']:
-                return ['background-color: #2a3a1a'] * len(row)
-            else:
-                return ['background-color: #1a1a1a'] * len(row)
+        n_g  = int(shot_df["goal"].sum())
+        n_ot = int(shot_df["on_target"].sum())
+        n_s  = len(shot_df)
+        xg_t = shot_df["xg"].sum()
 
-        styled_table = shot_tbl.style.apply(color_row, axis=1)
-        st.dataframe(styled_table, width="stretch", hide_index=True)
-    else:
-        st.info("No shots recorded for this match with selected position filters.")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(f"{team_label[:18]} — Shots",     n_s)
+        c2.metric("Goals",                           n_g)
+        c3.metric("On Target",                       n_ot)
+        c4.metric("Total xG",                        f"{xg_t:.2f}")
+
+        tbl_cols = ["player_name", "minute", "xg", "outcome", "shot_type",
+                    "shot_technique", "shot_body_part"]
+        tbl_cols = [c for c in tbl_cols if c in shot_df.columns]
+        tbl = shot_df[tbl_cols].copy().sort_values("minute").reset_index(drop=True)
+        tbl.columns = [c.replace("shot_", "").replace("_", " ").title()
+                       for c in tbl_cols]
+        tbl["Xg"] = tbl["Xg"].round(3) if "Xg" in tbl.columns else tbl.get("xg", "")
+        st.dataframe(tbl, width='stretch', hide_index=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# xG TIMELINE
+# TAB 2 — xG TIMELINE (both teams)
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab2:
-    section_header("xG Timeline", icon="📈")
+with tab_xg:
+    section_header("xG Timeline", icon="📈",
+                   subtitle="Cumulative xG for both teams — divergence from actual goals = luck")
+
     info_box(
-        "Expected Goals (xG) = logistic function of shot distance and angle to goal. "
-        "Each shot adds its xG to the cumulative total, giving a 'fair-score' view of the match."
+        "Each step = a shot. Stars = goals. "
+        "If a team's xG line finishes above their actual goals, they were "
+        "<b>unlucky</b>; if below, they <b>over-performed</b> their chances."
     )
 
-    if shots.empty:
-        st.info("No shot events for this match.")
+    if home_shots.empty and away_shots.empty:
+        st.info("No shot data recorded for this match.")
     else:
-        s_sorted = shots.sort_values("minute").copy()
-        s_sorted["cum_xg"] = s_sorted["xg"].cumsum()
-
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=s_sorted["minute"], y=s_sorted["cum_xg"],
-            mode="lines+markers", name="Cumulative xG",
-            line=dict(color=COLORS["primary"], width=2.5, shape="hv"),
-            marker=dict(size=s_sorted["xg"] * 30 + 5, color=COLORS["primary"],
-                        symbol=["star" if g else "circle" for g in s_sorted["goal"]]),
-            text=[f"{r['player_name']}<br>xG {r['xg']:.3f}" for _, r in s_sorted.iterrows()],
-            hovertemplate="%{text}<br>Min %{x}<extra></extra>",
-        ))
-        for _, gr in s_sorted[s_sorted["goal"]].iterrows():
-            fig.add_vline(x=gr["minute"], line_dash="dash", line_color=COLORS["success"], opacity=0.7)
-            fig.add_annotation(x=gr["minute"], y=gr["cum_xg"],
-                               text=f"⚽ {gr['player_name']}", showarrow=True,
-                               font=dict(color=COLORS["success"], size=10), ax=20, ay=-30)
-        fig.add_hline(y=total_xg, line_dash="dot", line_color=COLORS["muted"],
-                      annotation_text=f"Total xG {total_xg:.2f}",
-                      annotation_font_color=COLORS["muted"])
-        fig = style_chart(fig, height=360,
-                          xaxis=dict(range=[0, 95], title="Minute", gridcolor=COLORS["grid"]),
-                          yaxis=dict(title="Cumulative xG", gridcolor=COLORS["grid"]))
-        st.plotly_chart(fig, width="stretch")
 
-        # xG per player
-        xg_p = shots.groupby("player_name").agg(
-            Shots=("xg","count"), xG=("xg","sum"), Goals=("goal","sum")
-        ).reset_index().sort_values("xG", ascending=False)
-        xg_p["xG"] = xg_p["xG"].round(3)
-        st.dataframe(xg_p, width="stretch", hide_index=True)
+        for shot_df, team_label, color in [
+            (home_shots, home_team, COLORS["primary"]),
+            (away_shots, away_team, COLORS["secondary"]),
+        ]:
+            if shot_df.empty:
+                continue
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# PLAYER RATINGS
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab3:
-    if mp.empty:
-        st.info("No player data.")
-    else:
-        section_header("Player Match Ratings", icon="👤")
-        mp_s = mp.sort_values("match_rating", ascending=False)
-        bar_c = [COLORS["success"] if r >= 7.5 else COLORS["warning"] if r >= 6.5 else COLORS["danger"]
-                 for r in mp_s["match_rating"]]
-        fig = go.Figure(go.Bar(
-            x=mp_s["match_rating"], y=mp_s["player_name"],
-            orientation="h", marker_color=bar_c,
-            text=[f"{r:.1f}" for r in mp_s["match_rating"]], textposition="outside",
-        ))
-        fig.add_vline(x=7.0, line_dash="dash", line_color=COLORS["muted"])
-        fig = style_chart(fig, height=max(280, len(mp_s)*24),
-                          xaxis=dict(range=[4, 10.5], title="Rating", gridcolor=COLORS["grid"]),
-                          yaxis=dict(autorange="reversed"))
-        fig.update_layout(title="Match Ratings  (green ≥ 7.5 · yellow ≥ 6.5 · red < 6.5)",
-                          margin=dict(l=150))
-        st.plotly_chart(fig, width="stretch")
+            s = shot_df.sort_values("minute").copy()
+            s["cum_xg"] = s["xg"].cumsum()
 
-        section_header("Physical Output", icon="🏃")
-        phys = mp[["player_name","position","minutes_played","distance_m",
-                   "hsr_m","sprint_count","max_speed_kmh","work_rate"]].sort_values("distance_m", ascending=False)
-        phys.columns = ["Player","Pos","Mins","Distance (m)","HSR (m)",
-                        "Sprints","Max Speed (km/h)","Work Rate (m/min)"]
-        st.dataframe(phys, width="stretch", hide_index=True)
+            # Guard: if minute column contains NaN, drop those rows
+            s = s.dropna(subset=["minute"])
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MATCH STATS
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab4:
-    if mp.empty:
-        st.info("No data.")
-    else:
-        l, r = st.columns([1, 1])
-        with l:
-            section_header("Team Statistics", icon="📊")
-            stats_df = pd.DataFrame({
-                "Statistic": [
-                    "Total Distance",
-                    "High-Speed Running",
-                    "Sprint Distance",
-                    "Total Sprints",
-                    "Accelerations",
-                    "Decelerations",
-                    "Total Passes",
-                    "Pass Completion",
-                    "Progressive Passes",
-                    "Pressures",
-                    "Pressures Won",
-                    "Key Passes",
-                    "Dribbles Won",
-                    "Tackles Won",
-                    "Total Shots",
-                    "Shots on Target",
-                    "Total xG",
-                    "Possession",
-                    "PPDA",
+            fig.add_trace(go.Scatter(
+                x=s["minute"], y=s["cum_xg"],
+                mode="lines+markers",
+                name=f"{team_label} xG",
+                line=dict(color=color, width=2.5, shape="hv"),
+                marker=dict(
+                    size=(s["xg"] * 28 + 5).clip(lower=5),
+                    color=color,
+                    symbol=["star" if g else "circle" for g in s["goal"]],
+                ),
+                text=[
+                    f"<b>{r['player_name']}</b><br>{team_label}<br>"
+                    f"Min {r['minute']} · xG {r['xg']:.3f}<br>"
+                    f"Outcome: {r['outcome']}"
+                    for _, r in s.iterrows()
                 ],
-                "Value": [
-                    f"{mp['distance_m'].sum():,.0f} m",
-                    f"{mp['hsr_m'].sum():,.0f} m",
-                    f"{mp['sprint_m'].sum():,.0f} m",
-                    f"{int(mp['sprint_count'].sum())}",
-                    f"{int(mp['accel_count'].sum())}",
-                    f"{int(mp['decel_count'].sum())}",
-                    f"{int(mp['passes'].sum())}",
-                    f"{mp['pass_completion'].mean()*100:.1f}%",
-                    f"{int(mp['progressive_passes'].sum())}",
-                    f"{int(mp['pressures'].sum())}",
-                    f"{int(mp['pressures_won'].sum())}",
-                    f"{int(mp['key_passes'].sum())}",
-                    f"{int(mp['dribbles_won'].sum())}",
-                    f"{int(mp['tackles_won'].sum())}",
-                    f"{n_shots}",
-                    f"{ot_shots}",
-                    f"{total_xg:.3f}",
-                    f"{poss:.1f}%",
-                    f"{ppda:.1f}",
-                ]
-            })
-            st.dataframe(stats_df, width="stretch", hide_index=True)
-
-        with r:
-            section_header("Distance by Position", icon="🏃")
-            pos_d = mp.groupby("position")["distance_m"].sum().reset_index().sort_values("distance_m")
-            fig = go.Figure(go.Bar(
-                x=pos_d["distance_m"], y=pos_d["position"],
-                orientation="h", marker_color=PALETTE[:len(pos_d)],
-                text=pos_d["distance_m"].map(lambda v: f"{v:,.0f}m"), textposition="outside",
+                hovertemplate="%{text}<extra></extra>",
             ))
-            fig = style_chart(fig, height=260,
-                              xaxis=dict(title="Total Distance (m)", gridcolor=COLORS["grid"]))
-            fig.update_layout(margin=dict(l=60))
-            st.plotly_chart(fig, width="stretch")
 
-            # Pressing by position
-            section_header("Pressures by Position", icon="🔥")
-            pos_p = mp.groupby("position")[["pressures","pressures_won"]].sum().reset_index()
-            pos_p["success_rate"] = (pos_p["pressures_won"] / pos_p["pressures"] * 100).round(1)
-            fig2 = go.Figure()
-            fig2.add_trace(go.Bar(x=pos_p["position"], y=pos_p["pressures"],
-                                  name="Total", marker_color=COLORS["secondary"], opacity=0.7))
-            fig2.add_trace(go.Bar(x=pos_p["position"], y=pos_p["pressures_won"],
-                                  name="Won", marker_color=COLORS["primary"]))
-            fig2 = style_chart(fig2, height=240, barmode="group",
-                               yaxis=dict(title="Count", gridcolor=COLORS["grid"]))
-            fig2.update_layout(title="Pressing Volume")
-            st.plotly_chart(fig2, width="stretch")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 3D KPI DASHBOARD
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab5:
-    if mp.empty:
-        st.info("No player data for 3D visualization.")
-    else:
-        section_header("3D Player Performance Dashboard", icon="🎯",
-                       subtitle="Explore player metrics across three dimensions")
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            x_metric = st.selectbox("X-Axis Metric",
-                ["distance_m", "passes", "pressures", "tackles_won", "key_passes",
-                 "dribbles_won", "hsr_m", "sprint_count"], key="x_3d")
-        with col2:
-            y_metric = st.selectbox("Y-Axis Metric",
-                ["match_rating", "pass_completion", "pressures_won", "work_rate",
-                 "max_speed_kmh", "accel_count", "decel_count"], key="y_3d")
-        with col3:
-            z_metric = st.selectbox("Z-Axis Metric",
-                ["match_rating", "distance_m", "passes", "pressures", "work_rate",
-                 "hsr_m", "sprint_count"], key="z_3d")
-
-        try:
-            mp_clean = mp[[x_metric, y_metric, z_metric, "position", "player_name"]].dropna().copy()
-
-            if not mp_clean.empty and len(mp_clean) > 0:
-                fig_3d = create_3d_kpi_dashboard(
-                    mp_clean,
-                    x_col=x_metric,
-                    y_col=y_metric,
-                    z_col=z_metric,
-                    color_col="position",
-                    title=f"3D Player Performance: {x_metric} vs {y_metric} vs {z_metric}"
+            # Vertical line + annotation for each goal
+            goals = s[s["goal"]].copy()
+            for _, gr in goals.iterrows():
+                fig.add_vline(
+                    x=gr["minute"], line_dash="dash",
+                    line_color=color, opacity=0.55,
                 )
-                st.plotly_chart(fig_3d, width="stretch")
+                fig.add_annotation(
+                    x=gr["minute"], y=gr["cum_xg"],
+                    text=f"⚽ {gr['player_name'][:18]}",
+                    showarrow=True, arrowhead=2,
+                    font=dict(color=color, size=9),
+                    ax=25, ay=-30,
+                )
 
-                st.subheader("Performance Summary by Position")
-                summary_stats = []
-                for pos in sorted(mp_clean["position"].unique()):
-                    pos_data = mp_clean[mp_clean["position"] == pos]
-                    try:
-                        summary_stats.append({
-                            "Position": str(pos),
-                            x_metric: float(pos_data[x_metric].mean()),
-                            y_metric: float(pos_data[y_metric].mean()),
-                            z_metric: float(pos_data[z_metric].mean()),
-                        })
-                    except (ValueError, TypeError):
-                        continue
+        # Halftime marker
+        fig.add_vline(x=45, line_dash="dot", line_color=COLORS["muted"], opacity=0.4)
+        fig.add_annotation(x=45, y=0, text="HT", showarrow=False,
+                           font=dict(color=COLORS["muted"], size=9), yanchor="bottom")
 
-                if summary_stats:
-                    summary_data = pd.DataFrame(summary_stats)
-                    st.dataframe(summary_data, width="stretch", hide_index=True)
+        # Extend x-axis gracefully if extra time exists
+        max_min = 95
+        if not home_shots.empty and not away_shots.empty:
+            all_mins = pd.concat([home_shots["minute"], away_shots["minute"]]).dropna()
+            if not all_mins.empty:
+                max_min = max(95, int(all_mins.max()) + 3)
+        elif not home_shots.empty:
+            max_min = max(95, int(home_shots["minute"].dropna().max()) + 3)
+        elif not away_shots.empty:
+            max_min = max(95, int(away_shots["minute"].dropna().max()) + 3)
+
+        fig = style_chart(
+            fig, height=380,
+            xaxis=dict(range=[0, max_min], title="Minute", gridcolor=COLORS["grid"]),
+            yaxis=dict(title="Cumulative xG", gridcolor=COLORS["grid"]),
+        )
+        st.plotly_chart(fig, width='stretch')
+
+        # Per-team xG vs goals summary
+        st.markdown("#### xG vs Goals Summary")
+        summary_rows = []
+        for shot_df, team_label, actual_goals in [
+            (home_shots, home_team, home_score),
+            (away_shots, away_team, away_score),
+        ]:
+            total_xg = round(shot_df["xg"].sum(), 2) if not shot_df.empty else 0.0
+            shots_n  = len(shot_df)
+            goals_n  = int(shot_df["goal"].sum()) if not shot_df.empty else actual_goals
+            ot_n     = int(shot_df["on_target"].sum()) if not shot_df.empty else 0
+            diff     = round(goals_n - total_xg, 2)
+            verdict  = "Over-performed" if diff > 0.3 else "Under-performed" if diff < -0.3 else "On-track"
+            summary_rows.append({
+                "Team":         team_label,
+                "Shots":        shots_n,
+                "On Target":    ot_n,
+                "Goals":        goals_n,
+                "xG":           total_xg,
+                "Goals − xG":   f"{diff:+.2f}",
+                "Verdict":      verdict,
+            })
+        st.dataframe(pd.DataFrame(summary_rows), width='stretch', hide_index=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — PRESS ANALYSIS
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_press:
+    section_header("Press Analysis", icon="🔥",
+                   subtitle=f"{our_team} — where and how the press worked")
+
+    if press_ev.empty:
+        st.info(f"No pressing/defensive action data found for {our_team} in this match.")
+    else:
+        # ── Counts per type ────────────────────────────────────────────────────
+        type_counts = press_ev["type_name"].value_counts()
+        n_press  = int(type_counts.get("Pressure",         0))
+        n_int    = int(type_counts.get("Interception",     0))
+        n_tack   = int(type_counts.get("Tackle",           0))
+        n_recov  = int(type_counts.get("Ball Recovery",    0))
+        n_total  = len(press_ev)
+
+        # Possession context
+        poss_ours = _approx_possession(our_team)
+
+        kpi_row([
+            kpi_card("Pressures",    n_press,              accent=COLORS["primary"]),
+            kpi_card("Interceptions", n_int,               accent=COLORS["secondary"]),
+            kpi_card("Tackles",      n_tack,               accent=COLORS["warning"]),
+            kpi_card("Ball Recoveries", n_recov,           accent=COLORS["success"]),
+            kpi_card("Total actions", n_total,             accent=COLORS["primary"]),
+            kpi_card("Possession",   f"{poss_ours:.0f}%",  sub=f"{our_team[:14]}", accent=COLORS["muted"]),
+        ])
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        spatial = press_ev[press_ev["has_xy"]].copy()
+
+        c1, c2 = st.columns(2)
+
+        # ── Press locations on pitch ───────────────────────────────────────────
+        with c1:
+            section_header("Press Location Map", icon="📍",
+                           subtitle="x = pitch depth (high = pressing high)")
+
+            if spatial.empty:
+                st.info("No coordinate data for press events.")
             else:
-                st.info("No player data available for visualization")
-        except Exception as e:
-            st.error(f"Error: Could not create dashboard. {str(e)}")
+                fig_p = draw_pitch()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# CSF & KPI GUIDE
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab6:
-    section_header("Critical Success Factors & Key Metrics", icon="💡",
-                   subtitle="What matters most in football — explained simply")
+                # Colour by type
+                type_colors = {
+                    "Pressure":      COLORS["primary"],
+                    "Interception":  COLORS["secondary"],
+                    "Tackle":        COLORS["warning"],
+                    "Ball Recovery": COLORS["success"],
+                }
+                for ttype, tcolor in type_colors.items():
+                    sub = spatial[spatial["type_name"] == ttype]
+                    if sub.empty:
+                        continue
+                    fig_p.add_trace(go.Scatter(
+                        x=sub["x_plot"], y=sub["y_plot"],
+                        mode="markers", name=ttype,
+                        marker=dict(
+                            size=7, color=tcolor, opacity=0.6,
+                            line=dict(width=0.5, color=COLORS["bg"]),
+                        ),
+                        text=[
+                            f"<b>{r['player_name']}</b><br>"
+                            f"{r['type_name']} · Min {r.get('minute', '?')}<br>"
+                            f"x={r['x']:.0f}m"
+                            for _, r in sub.iterrows()
+                        ],
+                        hovertemplate="%{text}<extra></extra>",
+                    ))
+                st.plotly_chart(fig_p, width='stretch')
 
-    col_explain, col_metrics = st.columns([1, 1])
+        # ── Press by pitch third ───────────────────────────────────────────────
+        with c2:
+            section_header("Press by Pitch Third", icon="📊",
+                           subtitle="Defensive / Middle / Attacking third")
 
-    with col_explain:
-        st.markdown("### 📚 What Are CSF & KPI?")
-        st.markdown("""
-**CSF (Critical Success Factors)** = The few things that MUST go well to win
-- Think of it like baking a cake: right temperature, good ingredients, timing
+            if spatial.empty:
+                st.info("No coordinate data.")
+            else:
+                # StatsBomb pitch is 120m; thirds are 0–40, 40–80, 80–120
+                def _third(x: float) -> str:
+                    if x < 40:
+                        return "Defensive"
+                    if x < 80:
+                        return "Middle"
+                    return "Attacking"
 
-**KPI (Key Performance Indicators)** = Measurable numbers that show if you're doing well
-- Like a health check-up: heart rate, blood pressure, weight
-        """)
+                spatial["third"] = spatial["x"].apply(_third)
+                third_counts = (
+                    spatial.groupby(["third", "type_name"])
+                    .size().reset_index(name="count")
+                )
+                third_order = ["Defensive", "Middle", "Attacking"]
+                third_total = spatial["third"].value_counts().reindex(third_order, fill_value=0)
 
-    with col_metrics:
-        st.markdown("### ⚽ Match Result")
-        result_text = f"{match_row['home_away']} {match_row['goals_for']} – {match_row['goals_against']} {match_row['opponent']}"
-        result_color = {"Win": "🟢", "Draw": "🟡", "Loss": "🔴"}.get(match_row["result"], "⚫")
-        st.markdown(f"**{result_color} {result_text}**")
-        st.markdown(f"**Result:** {match_row['result']}")
+                fig_t = go.Figure()
+                for ttype, tcolor in type_colors.items():
+                    sub = third_counts[third_counts["type_name"] == ttype]
+                    if sub.empty:
+                        continue
+                    counts = [
+                        int(sub[sub["third"] == t]["count"].sum()) if t in sub["third"].values else 0
+                        for t in third_order
+                    ]
+                    fig_t.add_trace(go.Bar(
+                        x=third_order, y=counts,
+                        name=ttype, marker_color=tcolor, opacity=0.85,
+                    ))
 
-    st.divider()
+                fig_t = style_chart(fig_t, height=280, barmode="stack",
+                                    yaxis=dict(title="Actions", gridcolor=COLORS["grid"]))
+                fig_t.update_layout(title="Actions by Pitch Third")
+                st.plotly_chart(fig_t, width='stretch')
 
-    # KPI Explanations
-    st.markdown("## 📊 Key Performance Indicators (Simple Explanation)")
+                # Quick verdict on press style
+                att_pct = third_total["Attacking"] / max(third_total.sum(), 1) * 100
+                def_pct = third_total["Defensive"] / max(third_total.sum(), 1) * 100
+                if att_pct >= 35:
+                    verdict = f"High press — {att_pct:.0f}% of actions in the attacking third."
+                elif def_pct >= 40:
+                    verdict = f"Defensive block — {def_pct:.0f}% of actions in their own third."
+                else:
+                    verdict = "Balanced mid-press across the pitch."
+                st.success(f"**Press style:** {verdict}")
 
-    kpi_explanations = {
-        "Goals": {
-            "value": match_row["goals_for"],
-            "icon": "⚽",
-            "simple": "Number of times we scored",
-            "why_matters": "More goals = more likely to win",
-            "good_level": f"> {int(match_row['goals_for'] + 1)}"
-        },
-        "Total xG (Expected Goals)": {
-            "value": f"{total_xg:.2f}",
-            "icon": "🎯",
-            "simple": "Quality of our shots (0-1 scale per shot)",
-            "why_matters": "Shows if we had good scoring chances (not lucky)",
-            "good_level": "> 1.5"
-        },
-        "Shots": {
-            "value": n_shots,
-            "icon": "💥",
-            "simple": "Total times we tried to score",
-            "why_matters": "More attempts = more chances to score",
-            "good_level": f"> {int(n_shots + 2)}"
-        },
-        "Possession": {
-            "value": f"{poss:.1f}%",
-            "icon": "🔵",
-            "simple": "How much we had the ball",
-            "why_matters": "More possession = better control of game",
-            "good_level": "> 50%"
-        },
-        "PPDA (Pressing)": {
-            "value": f"{ppda:.1f}",
-            "icon": "🔥",
-            "simple": f"How aggressively we defend (lower = more aggressive)",
-            "why_matters": "Aggressive pressing = less time for opponent",
-            "good_level": "< 10"
-        },
-    }
+        st.markdown("<br>", unsafe_allow_html=True)
 
-    for title, info in kpi_explanations.items():
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown(f"### {info['icon']} {title}")
-            st.markdown(f"**Value:** {info['value']}")
-        with col2:
-            st.markdown(f"**What it means:** {info['simple']}")
-            st.markdown(f"**Why it matters:** {info['why_matters']}")
-            st.markdown(f"**Good level:** {info['good_level']}")
-        st.divider()
+        # ── Territory depth per player ─────────────────────────────────────────
+        section_header("Territory Depth by Player", icon="🗺️",
+                       subtitle="Average x of defensive actions (higher = pressing further up)")
+        info_box(
+            "x < 40m = own defensive third &nbsp;·&nbsp; "
+            "x 40–80m = midfield &nbsp;·&nbsp; "
+            "x > 80m = opponent's half (high press)."
+        )
 
-    st.markdown("## 🎯 Critical Success Factors")
-
-    # CSF Analysis
-    csf_data = []
-
-    # CSF 1: Finishing (Goals vs xG)
-    xg_efficiency = (match_row["goals_for"] / total_xg * 100) if total_xg > 0 else 0
-    csf_data.append({
-        "CSF": "Finishing Quality",
-        "icon": "⚽",
-        "metric": f"Goals: {match_row['goals_for']} / xG: {total_xg:.2f}",
-        "explanation": "Did we score from our chances?",
-        "status": "🟢 GOOD" if match_row["goals_for"] >= total_xg * 0.5 else "🟡 OK" if match_row["goals_for"] >= total_xg * 0.2 else "🔴 POOR",
-    })
-
-    # CSF 2: Possession Control
-    csf_data.append({
-        "CSF": "Game Control",
-        "icon": "🔵",
-        "metric": f"Possession: {poss:.1f}%",
-        "explanation": "Did we control the game?",
-        "status": "🟢 GOOD" if poss > 55 else "🟡 OK" if poss > 45 else "🔴 POOR",
-    })
-
-    # CSF 3: Defensive Strength
-    csf_data.append({
-        "CSF": "Defensive Strength",
-        "icon": "🛡️",
-        "metric": f"PPDA: {ppda:.1f} (lower is better)",
-        "explanation": "How tight was our defense?",
-        "status": "🟢 GOOD" if ppda < 10 else "🟡 OK" if ppda < 13 else "🔴 POOR",
-    })
-
-    # CSF 4: Shot Efficiency
-    ot_pct = (ot_shots / n_shots * 100) if n_shots > 0 else 0
-    csf_data.append({
-        "CSF": "Shot Accuracy",
-        "icon": "🎯",
-        "metric": f"On Target: {ot_shots}/{n_shots} ({ot_pct:.0f}%)",
-        "explanation": "Did we aim well at goal?",
-        "status": "🟢 GOOD" if ot_pct > 50 else "🟡 OK" if ot_pct > 30 else "🔴 POOR",
-    })
-
-    st.markdown("### What Must Go Right to Win 👇")
-
-    for csf in csf_data:
-        col1, col2, col3 = st.columns([1.5, 2, 1.5])
-        with col1:
-            st.markdown(f"**{csf['icon']} {csf['CSF']}**")
-        with col2:
-            st.markdown(f"*{csf['explanation']}*")
-            st.code(csf['metric'], language=None)
-        with col3:
-            st.markdown(csf['status'])
-        st.markdown("---")
-
-    # Match Verdict
-    st.markdown("## 🏆 Match Verdict")
-
-    wins = sum([1 for csf in csf_data if "🟢" in csf["status"]])
-    total_csf = len(csf_data)
-
-    verdict_col1, verdict_col2 = st.columns([2, 1])
-    with verdict_col1:
-        st.markdown(f"### {wins}/{total_csf} Critical Factors Were Successful")
-        if match_row["result"] == "Win":
-            st.success(f"✅ **WON** - We did enough things right!")
-        elif match_row["result"] == "Draw":
-            st.info(f"🤝 **DREW** - Both teams were balanced")
+        if spatial.empty:
+            st.info("No coordinate data for territory depth.")
         else:
-            st.error(f"❌ **LOST** - Need to improve these areas")
+            depth = (
+                spatial.groupby("player_name")["x"]
+                .agg(["mean", "count"])
+                .reset_index()
+                .rename(columns={"mean": "avg_x", "count": "n_actions"})
+                .query("n_actions >= 2")         # filter noise (< 2 actions)
+                .sort_values("avg_x", ascending=False)
+                .head(20)
+            )
 
-    with verdict_col2:
-        # Simple visualization
-        fig_verdict = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=wins,
-            domain={"x": [0, 1], "y": [0, 1]},
-            title={"text": "Success Rate"},
-            gauge={
-                "axis": {"range": [0, total_csf]},
-                "bar": {"color": COLORS["primary"]},
-                "steps": [
-                    {"range": [0, total_csf * 0.33], "color": COLORS["danger"]},
-                    {"range": [total_csf * 0.33, total_csf * 0.66], "color": COLORS["warning"]},
-                    {"range": [total_csf * 0.66, total_csf], "color": COLORS["success"]},
-                ],
-            },
-        ))
-        fig_verdict.update_layout(height=300, margin=dict(l=0, r=0, t=50, b=0),
-                                 paper_bgcolor=COLORS["bg"], font=dict(color=COLORS["text"]))
-        st.plotly_chart(fig_verdict, width="stretch")
+            if depth.empty:
+                st.info("Not enough per-player data (< 2 actions each).")
+            else:
+                bar_colors = [
+                    COLORS["success"] if x >= 80 else
+                    COLORS["primary"] if x >= 60 else
+                    COLORS["warning"] if x >= 40 else
+                    COLORS["danger"]
+                    for x in depth["avg_x"]
+                ]
+                fig_d = go.Figure(go.Bar(
+                    x=depth["avg_x"], y=depth["player_name"],
+                    orientation="h",
+                    marker_color=bar_colors, opacity=0.88,
+                    text=[
+                        f"{v:.0f}m ({n} actions)"
+                        for v, n in zip(depth["avg_x"], depth["n_actions"])
+                    ],
+                    textposition="outside",
+                    customdata=depth["n_actions"],
+                ))
+                fig_d.add_vline(x=40,  line_dash="dot",  line_color=COLORS["muted"],   opacity=0.5)
+                fig_d.add_vline(x=60,  line_dash="dot",  line_color=COLORS["warning"],  opacity=0.6,
+                                annotation_text="Opp. half", annotation_font_color=COLORS["warning"])
+                fig_d.add_vline(x=80,  line_dash="dash", line_color=COLORS["success"],  opacity=0.7,
+                                annotation_text="High press", annotation_font_color=COLORS["success"])
+                fig_d = style_chart(
+                    fig_d,
+                    height=max(300, len(depth) * 28),
+                    xaxis=dict(range=[0, 125], title="Avg x of defensive actions (m)",
+                               gridcolor=COLORS["grid"]),
+                    yaxis=dict(autorange="reversed"),
+                )
+                st.plotly_chart(fig_d, width='stretch')
 
-    st.divider()
-
-    st.markdown("""
-### 💡 Quick Tips to Understand Football Analytics
-
-1. **Goals are the result** - Everything else affects whether you score
-2. **xG shows luck** - If xG > Goals, you were unlucky. If Goals > xG, you were lucky
-3. **Possession doesn't guarantee wins** - But helps you control the game
-4. **Pressing is balance** - Too aggressive = exposed defense. Too passive = no pressure
-5. **Efficiency matters** - 1 great chance > 10 poor chances
-
-Think of it like a restaurant:
-- **CSF** = Must have: good food, clean place, friendly staff
-- **KPI** = Numbers we measure: customer count, profit, satisfaction score
-    """)
+        # ── Player press breakdown table ───────────────────────────────────────
+        section_header("Player Press Breakdown", icon="👤")
+        player_tbl = (
+            press_ev.groupby(["player_name", "position", "type_name"])
+            .size().reset_index(name="count")
+            .pivot_table(index=["player_name", "position"],
+                         columns="type_name", values="count", fill_value=0)
+            .reset_index()
+        )
+        # Ensure all type columns exist even if zero for this match
+        for col in ("Pressure", "Interception", "Tackle", "Ball Recovery"):
+            if col not in player_tbl.columns:
+                player_tbl[col] = 0
+        player_tbl["Total"] = player_tbl[
+            [c for c in ("Pressure", "Interception", "Tackle", "Ball Recovery")
+             if c in player_tbl.columns]
+        ].sum(axis=1)
+        player_tbl = player_tbl.sort_values("Total", ascending=False).reset_index(drop=True)
+        st.dataframe(player_tbl, width='stretch', hide_index=True)

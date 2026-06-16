@@ -110,7 +110,7 @@ with left:
                       yaxis=dict(title="Goals", gridcolor=COLORS["grid"]),
                       yaxis2=dict(title="Pts", overlaying="y", side="right", showgrid=False),
                       barmode="overlay", legend=dict(orientation="h", y=1.12))
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width='stretch')
 
 with right:
     section_header("Top Scorers", icon="⚽")
@@ -129,7 +129,7 @@ with right:
     fig2 = style_chart(fig2, height=300,
                        yaxis=dict(autorange="reversed", gridcolor=COLORS["grid"]),
                        xaxis=dict(title="Goals", gridcolor=COLORS["grid"]))
-    st.plotly_chart(fig2, width="stretch")
+    st.plotly_chart(fig2, width='stretch')
 
 # ── Bottom row ────────────────────────────────────────────────────────────────
 b1, b2 = st.columns(2)
@@ -147,7 +147,7 @@ with b1:
     fig3 = style_chart(fig3, height=280,
                        xaxis=dict(title="Avg Distance (m)", gridcolor=COLORS["grid"]),
                        yaxis=dict(gridcolor=COLORS["grid"]))
-    st.plotly_chart(fig3, width="stretch")
+    st.plotly_chart(fig3, width='stretch')
 
 with b2:
     section_header("Result Distribution", icon="🥇")
@@ -161,7 +161,7 @@ with b2:
     ))
     fig4 = style_chart(fig4, height=280)
     fig4.update_traces(textfont_color=COLORS["text"])
-    st.plotly_chart(fig4, width="stretch")
+    st.plotly_chart(fig4, width='stretch')
 
 st.divider()
 st.caption("MIS41500 Sports & Performance Analytics · Group Assessment")

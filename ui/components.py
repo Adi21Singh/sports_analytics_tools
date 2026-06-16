@@ -86,101 +86,95 @@ def style_chart(fig: go.Figure, height: int = 320, **overrides) -> go.Figure:
 def draw_pitch() -> go.Figure:
     """Return a blank Plotly figure with a football pitch drawn on it."""
     import numpy as np
+
+    _LINE  = "#ffffff"          # white markings — clearly visible on green
+    _PITCH = "#1a6b2f"          # football pitch green
+    _GOAL  = "rgba(0,0,0,0.45)" # slightly darkened goal boxes
+    _W     = 1.8                # standard line width
+    _WH    = 2.5                # heavier outer boundary
+
     fig = go.Figure()
 
+    # ── Pitch shapes ─────────────────────────────────────────────────────────
     shapes = [
-        # Outer boundary
-        dict(type="rect", x0=0, y0=0, x1=105, y1=68,
-             line=dict(color="#3a5a3a", width=2.5), fillcolor="#1a3a1a"),
-        # Left penalty area
-        dict(type="rect", x0=0,    y0=13.84, x1=16.5, y1=54.16,
-             line=dict(color="#3a5a3a", width=1.5), fillcolor="rgba(0,0,0,0)"),
-        # Right penalty area
-        dict(type="rect", x0=88.5, y0=13.84, x1=105,  y1=54.16,
-             line=dict(color="#3a5a3a", width=1.5), fillcolor="rgba(0,0,0,0)"),
-        # Left 6-yard box
-        dict(type="rect", x0=0,    y0=24.84, x1=5.5,  y1=43.16,
-             line=dict(color="#3a5a3a", width=1.2), fillcolor="rgba(0,0,0,0)"),
-        # Right 6-yard box
-        dict(type="rect", x0=99.5, y0=24.84, x1=105,  y1=43.16,
-             line=dict(color="#3a5a3a", width=1.2), fillcolor="rgba(0,0,0,0)"),
-        # Halfway line
-        dict(type="line", x0=52.5, y0=0, x1=52.5, y1=68,
-             line=dict(color="#3a5a3a", width=1.5)),
-        # Right goal
-        dict(type="rect", x0=105,  y0=30.34, x1=106.5, y1=37.66,
-             line=dict(color="#8892b0", width=2), fillcolor=COLORS["bg"]),
-        # Left goal
-        dict(type="rect", x0=-1.5, y0=30.34, x1=0, y1=37.66,
-             line=dict(color="#8892b0", width=2), fillcolor=COLORS["bg"]),
+        dict(type="rect", x0=0,    y0=0,     x1=105,  y1=68,    # outer boundary
+             line=dict(color=_LINE, width=_WH), fillcolor=_PITCH),
+        dict(type="rect", x0=0,    y0=13.84, x1=16.5, y1=54.16, # left penalty area
+             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)"),
+        dict(type="rect", x0=88.5, y0=13.84, x1=105,  y1=54.16, # right penalty area
+             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)"),
+        dict(type="rect", x0=0,    y0=24.84, x1=5.5,  y1=43.16, # left 6-yard box
+             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)"),
+        dict(type="rect", x0=99.5, y0=24.84, x1=105,  y1=43.16, # right 6-yard box
+             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)"),
+        dict(type="line", x0=52.5, y0=0,     x1=52.5, y1=68,    # halfway line
+             line=dict(color=_LINE, width=_W)),
+        dict(type="rect", x0=105,  y0=30.34, x1=107,  y1=37.66, # right goal
+             line=dict(color=_LINE, width=_W),  fillcolor=_GOAL),
+        dict(type="rect", x0=-2,   y0=30.34, x1=0,    y1=37.66, # left goal
+             line=dict(color=_LINE, width=_W),  fillcolor=_GOAL),
     ]
     for s in shapes:
         fig.add_shape(**s)
 
-    # Centre circle
-    theta = np.linspace(0, 2 * np.pi, 100)
+    _lkw = dict(mode="lines", showlegend=False, hoverinfo="skip")
+    _mkw = dict(mode="markers", showlegend=False, hoverinfo="skip")
+
+    # ── Centre circle ─────────────────────────────────────────────────────────
+    theta = np.linspace(0, 2 * np.pi, 120)
     fig.add_trace(go.Scatter(
         x=52.5 + 9.15 * np.cos(theta),
         y=34   + 9.15 * np.sin(theta),
-        mode="lines", line=dict(color="#3a5a3a", width=1.5),
-        showlegend=False, hoverinfo="skip",
+        line=dict(color=_LINE, width=_W), **_lkw,
     ))
 
-    # Corner arcs (1-yard radius)
-    for cx, cy in [(0, 0), (105, 0), (0, 68), (105, 68)]:
-        arc_angle = np.linspace(0, np.pi/2, 30)
-        if cx == 0 and cy == 0:  # Bottom-left
-            arc_x = 1 * np.cos(arc_angle + np.pi)
-            arc_y = 1 * np.sin(arc_angle + np.pi)
-        elif cx == 105 and cy == 0:  # Bottom-right
-            arc_x = 105 - 1 * np.cos(arc_angle)
-            arc_y = 1 * np.sin(arc_angle)
-        elif cx == 0 and cy == 68:  # Top-left
-            arc_x = 1 * np.cos(arc_angle)
-            arc_y = 68 - 1 * np.sin(arc_angle)
-        else:  # Top-right
-            arc_x = 105 - 1 * np.cos(arc_angle + np.pi)
-            arc_y = 68 - 1 * np.sin(arc_angle + np.pi)
+    # ── Penalty arcs (the D) ──────────────────────────────────────────────────
+    arc_half = float(np.arccos(5.5 / 9.15))   # ≈ 0.928 rad — where arc exits box
+
+    # Left D (arc faces right, outside the left penalty box)
+    t_L = np.linspace(-arc_half, arc_half, 60)
+    fig.add_trace(go.Scatter(
+        x=11  + 9.15 * np.cos(t_L), y=34 + 9.15 * np.sin(t_L),
+        line=dict(color=_LINE, width=_W), **_lkw,
+    ))
+
+    # Right D (arc faces left, outside the right penalty box)
+    t_R = np.linspace(np.pi - arc_half, np.pi + arc_half, 60)
+    fig.add_trace(go.Scatter(
+        x=94  + 9.15 * np.cos(t_R), y=34 + 9.15 * np.sin(t_R),
+        line=dict(color=_LINE, width=_W), **_lkw,
+    ))
+
+    # ── Corner arcs (1 m radius, curving into the pitch) ─────────────────────
+    for cx, cy, t_start, t_end in [
+        (  0,  0,  0,          np.pi / 2),       # bottom-left
+        (105,  0,  np.pi / 2,  np.pi),            # bottom-right
+        (  0, 68, -np.pi / 2,  0),                # top-left
+        (105, 68,  np.pi,      3 * np.pi / 2),    # top-right
+    ]:
+        t = np.linspace(t_start, t_end, 30)
         fig.add_trace(go.Scatter(
-            x=arc_x, y=arc_y, mode="lines",
-            line=dict(color="#3a5a3a", width=1), showlegend=False, hoverinfo="skip",
+            x=cx + np.cos(t), y=cy + np.sin(t),
+            line=dict(color=_LINE, width=1.2), **_lkw,
         ))
 
-    # Penalty spots
+    # ── Spots (penalty + centre) ──────────────────────────────────────────────
     fig.add_trace(go.Scatter(
-        x=[11, 94], y=[34, 34], mode="markers",
-        marker=dict(size=3, color="#3a5a3a"), showlegend=False, hoverinfo="skip",
-    ))
-
-    # Center spot
-    fig.add_trace(go.Scatter(
-        x=[52.5], y=[34], mode="markers",
-        marker=dict(size=3, color="#3a5a3a"), showlegend=False, hoverinfo="skip",
+        x=[11, 94, 52.5], y=[34, 34, 34],
+        marker=dict(size=5, color=_LINE), **_mkw,
     ))
 
     fig.update_layout(
         paper_bgcolor=COLORS["bg"],
-        plot_bgcolor="#1a3a1a",
+        plot_bgcolor=_PITCH,
         font=dict(color=COLORS["text"], size=12),
-        height=500,
+        height=480,
         margin=dict(t=20, b=20, l=20, r=20),
         legend=dict(orientation="h", y=1.08, bgcolor="rgba(0,0,0,0)"),
-        xaxis=dict(
-            range=[-2, 107],
-            showgrid=False,
-            zeroline=False,
-            showticklabels=False,
-            constrain="domain",
-        ),
-        yaxis=dict(
-            range=[-2, 70],
-            showgrid=False,
-            zeroline=False,
-            showticklabels=False,
-            scaleanchor="x",
-            scaleratio=1,
-            constrain="domain",
-        ),
+        xaxis=dict(range=[-3, 108], showgrid=False, zeroline=False,
+                   showticklabels=False),
+        yaxis=dict(range=[-2, 70],  showgrid=False, zeroline=False,
+                   showticklabels=False),
         hovermode="closest",
     )
     return fig

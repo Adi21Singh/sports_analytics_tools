@@ -1,4 +1,0 @@
-Model,n_shots,Goals,Actual goal rate,Mean predicted xG,Calibration ratio,Log-loss,Brier score,MSE vs goals,MAE vs goals,Corr w/ SB xG,MSE vs SB xG
-v1 — dist+angle only,1905,207,0.1087,0.4262,3.923,0.59829,0.2041,0.2041,0.41219,0.5216,0.13216
-v2 — dist+angle+body+pressure,1905,207,0.1087,0.4965,4.57,0.71068,0.24729,0.24729,0.45862,0.6368,0.1771
-StatsBomb reference,1905,207,0.1087,0.1045,0.962,0.26718,0.0772,0.0772,0.1497,1.0,0.0
