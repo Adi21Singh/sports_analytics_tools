@@ -268,6 +268,13 @@ def _match_label(row) -> str:
 matches_df["_label"] = matches_df.apply(_match_label, axis=1)
 
 
+def _on_pi_match_change():
+    lbl = st.session_state.get("pi_match", "")
+    row = matches_df[matches_df["_label"] == lbl]
+    if not row.empty:
+        st.session_state["global_match_id"] = int(row.iloc[0]["match_id"])
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 🔍 Press Intelligence")
@@ -288,11 +295,22 @@ Defensive Action) in 10-minute windows across the match.
             """
         )
 
-    selected_label = st.selectbox("Select Match", matches_df["_label"].tolist(), key="pi_match")
+    # Sync with match selected on the Match Analysis page
+    _gid = st.session_state.get("global_match_id")
+    if _gid is not None:
+        _gid_row = matches_df[matches_df["match_id"] == _gid]
+        if not _gid_row.empty:
+            _expected = _gid_row.iloc[0]["_label"]
+            if st.session_state.get("pi_match") != _expected:
+                st.session_state["pi_match"] = _expected
+
+    selected_label = st.selectbox("Select Match", matches_df["_label"].tolist(), key="pi_match", on_change=_on_pi_match_change)
     sel_row      = matches_df[matches_df["_label"] == selected_label].iloc[0]
     home_team    = sel_row["_home"]
     away_team    = sel_row["_away"]
     match_id     = int(sel_row["match_id"])
+    if "global_match_id" not in st.session_state:
+        st.session_state["global_match_id"] = match_id
 
     our_team      = st.radio("Analyse press for:", [home_team, away_team])
     opponent_team = away_team if our_team == home_team else home_team
