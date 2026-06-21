@@ -1,4 +1,4 @@
-"""Player Performance — physical KPIs, technical stats, wellness, radar profile."""
+"""Player Performance - physical KPIs, technical stats, wellness, radar profile."""
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -10,14 +10,14 @@ import pandas as pd
 import numpy as np
 
 import ui.styles as styles
-from ui.components import kpi_card, kpi_row, section_header, style_chart, empty_state, info_box
+from ui.components import kpi_card, kpi_row, section_header, style_chart, empty_state, info_box, info_popover
 from ui.data_source import render_data_source_selector, get_data
 from analytics.performance import build_radar_profile, compute_derived_kpis, RADAR_METRICS
 from config import COLORS, PALETTE
 
 styles.apply()
 
-# ── Sidebar phase 1 — data source (must render before get_data) ───────────────
+# ── Sidebar phase 1 - data source (must render before get_data) ───────────────
 with st.sidebar:
     st.markdown("### 📊 Player Performance")
     render_data_source_selector()
@@ -25,7 +25,7 @@ with st.sidebar:
 players, training, wellness, matches, match_players, events = get_data()
 match_players = compute_derived_kpis(match_players)
 
-# ── Sidebar phase 2 — player / date controls ──────────────────────────────────
+# ── Sidebar phase 2 - player / date controls ──────────────────────────────────
 with st.sidebar:
     name = st.selectbox("Player", sorted(players["name"].tolist()))
     row  = players[players["name"] == name].iloc[0]
@@ -66,7 +66,16 @@ with tab_phys:
     if p_train.empty:
         empty_state(); st.stop()
 
-    section_header("Physical KPIs — Training Sessions", icon="📐")
+    section_header("Physical KPIs - Training Sessions", icon="📐",
+                   help_text=(
+                       "Season averages across all training sessions for this player.<br><br>"
+                       "<b>Distance</b> - total metres covered per session (all speeds).<br>"
+                       "<b>HSR (High-Speed Running)</b> - metres above 19.8 km/h. Key indicator of match intensity readiness.<br>"
+                       "<b>Sprint Distance</b> - metres above 25.2 km/h. Explosive efforts.<br>"
+                       "<b>Peak Speed</b> - highest recorded speed across the season in km/h.<br>"
+                       "<b>Work Rate</b> - distance per minute (m/min). Measures sustained intensity relative to time on pitch.<br>"
+                       "<b>HML (High Metabolic Load)</b> - combines high-speed running, accelerations and decelerations into one load unit."
+                   ))
     kpi_row([
         kpi_card("Avg Distance",    f"{p_train['distance_m'].mean():,.0f} m",   accent=COLORS["primary"]),
         kpi_card("Avg HSR",         f"{p_train['hsr_m'].mean():,.0f} m",        accent=COLORS["secondary"]),
@@ -144,7 +153,17 @@ with tab_tech:
     avg_pass_c  = p_match["pass_completion"].mean() * 100
     avg_xg90    = p_match["xg_p90"].mean()
 
-    section_header("Technical KPIs — Match Data", icon="📐")
+    section_header("Technical KPIs - Match Data", icon="📐",
+                   help_text=(
+                       "In-match statistics aggregated across all appearances this season.<br><br>"
+                       "<b>xG (Expected Goals)</b> - sum of shot quality probabilities. Measures offensive threat regardless of finishing luck.<br>"
+                       "<b>xA (Expected Assists)</b> - quality of chances created for teammates.<br>"
+                       "<b>xG per 90</b> - xG normalised to 90 minutes, allowing fair comparison across players with different game time.<br>"
+                       "<b>Avg Rating</b> - composite match rating (4.5-9.5 scale) based on goals, assists, and position-specific metrics.<br>"
+                       "<b>Pass Accuracy %</b> - completed passes as a % of attempted.<br>"
+                       "<b>Goal Inv/90</b> - (goals + assists) per 90 minutes. Direct output contribution rate.<br>"
+                       "<b>Press Succ%</b> - % of pressure events that led to a ball recovery within 5 seconds."
+                   ))
     kpi_row([
         kpi_card("Goals",          goals_total,            accent=COLORS["primary"]),
         kpi_card("Assists",        assts_total,            accent=COLORS["success"]),
@@ -228,7 +247,15 @@ with tab_well:
         avg_sor    = p_well["soreness_score"].mean()
         avg_mood   = p_well["mood_score"].mean()
 
-        section_header("Wellness Overview", icon="💊")
+        section_header("Wellness Overview", icon="💊",
+                       help_text=(
+                           "Self-reported daily wellness scores from the player. All scores on a 1-10 scale.<br><br>"
+                           "<b>Composite Score</b> - weighted average of all sub-scores. Below 6.0 warrants a conversation with the player.<br>"
+                           "<b>Sleep Score</b> - quality and duration of sleep. Strong predictor of next-day performance and injury risk.<br>"
+                           "<b>Fatigue Score</b> - perceived tiredness. Rising fatigue with declining sleep is a red flag for overtraining.<br>"
+                           "<b>Soreness Score</b> - muscle soreness. Expected to spike 24-48h after high-intensity sessions.<br>"
+                           "<b>Mood Score</b> - psychological wellbeing. Sustained low mood can indicate mental fatigue or personal issues."
+                       ))
         kpi_row([
             kpi_card("Composite Score",  f"{avg_comp:.1f}/10", accent=COLORS["primary"]),
             kpi_card("Avg Sleep",        f"{avg_sleep:.1f}/10", accent=COLORS["success"]),
@@ -238,7 +265,7 @@ with tab_well:
         ])
         st.markdown("<br>", unsafe_allow_html=True)
 
-        info_box("Composite Wellness = (Sleep + (10−Fatigue) + (10−Soreness) + Mood + (10−Stress)) / 5 — higher is better readiness.")
+        info_box("Composite Wellness = (Sleep + (10−Fatigue) + (10−Soreness) + Mood + (10−Stress)) / 5 - higher is better readiness.")
 
         fig = go.Figure()
         roll = p_well["wellness_composite"].rolling(7, min_periods=1).mean()
@@ -300,7 +327,7 @@ with tab_radar:
             paper_bgcolor=COLORS["bg"],
             height=480,
             margin=dict(t=60, b=40),
-            title=dict(text=f"{name} — Squad Percentile Profile", font=dict(color=COLORS["text"])),
+            title=dict(text=f"{name} - Squad Percentile Profile", font=dict(color=COLORS["text"])),
         )
         st.plotly_chart(fig, width="stretch")
 

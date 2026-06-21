@@ -1,4 +1,4 @@
-"""Injury & Load Monitor — ACWR, PMC, monotony, ML risk prediction."""
+"""Injury & Load Monitor - ACWR, PMC, monotony, ML risk prediction."""
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 
 import ui.styles as styles
-from ui.components import kpi_card, kpi_row, section_header, style_chart, info_box, risk_badge
+from ui.components import kpi_card, kpi_row, section_header, style_chart, info_box, risk_badge, info_popover
 from ui.data_source import render_data_source_selector, get_data
 from analytics.load_monitoring import (
     calculate_acwr, calculate_pmc, calculate_monotony_strain, availability_pct
@@ -20,14 +20,14 @@ from config import COLORS, PALETTE, ACWR_ZONES, acwr_zone
 
 styles.apply()
 
-# ── Sidebar phase 1 — data source ────────────────────────────────────────────
+# ── Sidebar phase 1 - data source ────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚕️ Injury & Load Monitor")
     render_data_source_selector()
 
 players, training, wellness, matches, match_players, events = get_data()
 
-# ── Sidebar phase 2 — player / window controls ────────────────────────────────
+# ── Sidebar phase 2 - player / window controls ────────────────────────────────
 with st.sidebar:
     name = st.selectbox("Individual Player", sorted(players["name"].tolist()))
     row  = players[players["name"] == name].iloc[0]
@@ -49,7 +49,16 @@ tab1, tab2, tab3, tab4 = st.tabs(
 # SQUAD DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    section_header("Squad Injury Risk Overview", icon="🚦")
+    section_header("Squad Injury Risk Overview", icon="🚦",
+                   help_text=(
+                       "Every player is classified into a risk zone based on their current ACWR "
+                       "(Acute:Chronic Workload Ratio - how much they have done this week vs their average over the past month).<br><br>"
+                       "<b>Optimal (0.8-1.3)</b> - safe to play full minutes.<br>"
+                       "<b>Caution (1.3-1.5)</b> - recent load spike. Consider reduced minutes or extra recovery.<br>"
+                       "<b>High Risk (&gt;1.5)</b> - substantially elevated injury risk. Rest recommended.<br>"
+                       "<b>Under-training (&lt;0.8)</b> - insufficient recent load. Player may not be match-sharp.<br><br>"
+                       "<b>Availability</b> - % of sessions attended. Low availability may indicate persistent niggles."
+                   ))
 
     max_sessions = training.groupby("player_id").size().max()
 
@@ -120,7 +129,14 @@ with tab2:
         # ACWR
         acwr_df = calculate_acwr(p_train["srpe"], p_train["date"], acute_d, chronic_d)
 
-        section_header(f"ACWR — {name}", icon="📈")
+        section_header(f"ACWR - {name}", icon="📈",
+                       help_text=(
+                           "<b>ACWR (Acute:Chronic Workload Ratio)</b> - divides last week's training load by the rolling monthly average.<br><br>"
+                           "Formula: Acute load (recent {acute_d} days) / Chronic load (past {chronic_d} days)<br><br>"
+                           "Load is measured in <b>sRPE</b> (Session Rating of Perceived Exertion) - session duration (minutes) x RPE score (1-10).<br><br>"
+                           "The coloured zones are: blue = under-training, green = optimal, amber = caution, red = high risk. "
+                           "The goal is to keep the ACWR line in the green zone as consistently as possible."
+                       ).format(acute_d=acute_d, chronic_d=chronic_d))
         info_box(
             f"Acute ({acute_d}d) : Chronic ({chronic_d}d) ratio using sRPE load. "
             "Optimal zone: <b>0.8–1.3</b>. Above 1.5 = High Risk."
@@ -149,7 +165,16 @@ with tab2:
 
         # PMC
         pmc_df = calculate_pmc(p_train["srpe"], p_train["date"])
-        section_header(f"Performance Management Chart (PMC) — {name}", icon="📉")
+        section_header(f"Performance Management Chart (PMC) - {name}", icon="📉",
+                       help_text=(
+                           "The PMC tracks three interconnected load concepts over the season:<br><br>"
+                           "<b>CTL - Chronic Training Load (Fitness)</b> - 42-day exponentially weighted average of daily load. "
+                           "A rising CTL means the player is building fitness.<br><br>"
+                           "<b>ATL - Acute Training Load (Fatigue)</b> - 7-day EWMA. Spikes when the player trains hard in a short period.<br><br>"
+                           "<b>TSB - Training Stress Balance (Form)</b> = CTL minus ATL. "
+                           "Positive TSB = rested and fresh. Negative TSB = fatigued but potentially fitter. "
+                           "TSB of +5 to +25 before a big match is ideal."
+                       ))
         info_box(
             "<b>CTL (Fitness)</b> = 42-day EWMA of daily load. "
             "<b>ATL (Fatigue)</b> = 7-day EWMA. "
@@ -197,11 +222,20 @@ with tab3:
         ms_df = calculate_monotony_strain(p_train["srpe"], p_train["date"])
         ms_clean = ms_df.dropna(subset=["monotony"])
 
-        section_header(f"Monotony & Strain — {name}", icon="📊")
+        section_header(f"Monotony & Strain - {name}", icon="📊",
+                       help_text=(
+                           "<b>Monotony</b> (Foster, 1998) measures how repetitive the training load is. "
+                           "Calculated as: rolling mean load / rolling standard deviation.<br><br>"
+                           "A value above 2.0 means the player is doing very similar load day-to-day - "
+                           "little variation in training stimulus, associated with higher injury and burnout risk.<br><br>"
+                           "<b>Strain</b> = weekly total load x monotony. It combines volume and repetitiveness into one figure. "
+                           "High strain means lots of load AND that load is monotonous - the worst combination.<br><br>"
+                           "The fix is varied session types: mix high-intensity with recovery sessions."
+                       ))
         info_box(
             "<b>Monotony</b> (Foster 1998) = rolling mean / rolling std. "
             "Values above 2.0 indicate repetitive training patterns associated with increased injury risk. "
-            "<b>Strain</b> = mean × monotony — captures combined volume and repetitiveness."
+            "<b>Strain</b> = mean × monotony - captures combined volume and repetitiveness."
         )
 
         l, r = st.columns(2)
@@ -242,7 +276,17 @@ with tab3:
 # ML RISK PREDICTION
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab4:
-    section_header("ML Injury Risk Prediction", icon="🤖")
+    section_header("ML Injury Risk Prediction", icon="🤖",
+                   help_text=(
+                       "A <b>Random Forest classifier</b> trained on the squad's training and wellness data. "
+                       "It predicts the probability that a player is currently at elevated injury risk.<br><br>"
+                       "<b>Input features used:</b> ACWR, age, training monotony, strain, days since last rest day, "
+                       "wellness composite score, and 7-day sRPE total.<br><br>"
+                       "<b>Output</b> - a risk probability (0-100%) per player. "
+                       "This is a supplementary signal - it should be read alongside the ACWR chart, not instead of it.<br><br>"
+                       "Important: the model is trained on synthetic data for this assignment. "
+                       "In a real deployment it would be retrained on historical injury records."
+                   ))
     info_box(
         "A <b>Random Forest classifier</b> (150 trees) trained on synthetic injury data. "
         "Input features: ACWR, age, training monotony, strain, days since rest, "
@@ -268,7 +312,7 @@ with tab4:
             mode="gauge+number",
             value=rv,
             number={"suffix": "%", "font": {"color": g_color, "size": 40}},
-            title={"text": f"{name} — Predicted Injury Risk", "font": {"color": COLORS["text"]}},
+            title={"text": f"{name} - Predicted Injury Risk", "font": {"color": COLORS["text"]}},
             gauge={
                 "axis": {"range": [0, 100], "tickcolor": COLORS["muted"]},
                 "bar":  {"color": g_color},
@@ -301,10 +345,10 @@ with tab4:
     fig2 = style_chart(fig2, height=440,
                        xaxis=dict(range=[0, 110], title="Risk %", gridcolor=COLORS["grid"]),
                        yaxis=dict(autorange="reversed"))
-    fig2.update_layout(title="Top 15 — Predicted Injury Risk", margin=dict(l=150))
+    fig2.update_layout(title="Top 15 - Predicted Injury Risk", margin=dict(l=150))
     st.plotly_chart(fig2, width="stretch")
 
-    # Feature importances — from the fitted model, not hardcoded
+    # Feature importances - from the fitted model, not hardcoded
     fi = model_metrics["feature_importances"].sort_values("Importance")
     fig3 = go.Figure(go.Bar(
         x=fi["Importance"], y=fi["Feature"],

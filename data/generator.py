@@ -177,7 +177,7 @@ def build_wellness(players: pd.DataFrame, training: pd.DataFrame, seed: int = 42
             mood    = float(np.clip(np.random.normal(7.5 - fatigue * 0.3, 0.8), 2, 10))
             stress  = float(np.clip(np.random.normal(4.0, 1.2), 1, 10))
 
-            # Weighted composite — literature-based weights (McLean et al. 2010,
+            # Weighted composite - literature-based weights (McLean et al. 2010,
             # Hooper & Mackinnon 1995).  Sleep quality and fatigue are the
             # strongest next-day performance predictors; mood and stress carry
             # less predictive weight.  Equal weighting (1/5 each) was replaced

@@ -1,5 +1,5 @@
 """
-Match Analysis — La Liga 2015/16 (StatsBomb)
+Match Analysis - La Liga 2015/16 (StatsBomb)
 ============================================
 Shot map · xG timeline (both teams) · Press breakdown.
 
@@ -7,7 +7,7 @@ StatsBomb coordinate notes
 --------------------------
 Events are stored in a team-relative coordinate system: x=0 is own goal,
 x=120 is the opponent's goal.  All shot x values therefore cluster near
-x=120 regardless of period or team — no direction-flip is needed.
+x=120 regardless of period or team - no direction-flip is needed.
 Pressures span 0–120 because they happen across the full pitch.
 Scale to pitch drawing: x_plot = x * 105/120, y_plot = y * 68/80.
 
@@ -286,15 +286,15 @@ kpi_row([
 ])
 with st.columns([18, 1])[1]:
     info_popover(
-        "**xG (Expected Goals)** — probability (0–1) that a shot becomes a goal, "
+        "**xG (Expected Goals)** - probability (0–1) that a shot becomes a goal, "
         "based on location, angle, and technique. Sums all shots for the match. "
         "<br><br>"
-        "**Shots** — total shot attempts including blocked, off target, and goals. "
+        "**Shots** - total shot attempts including blocked, off target, and goals. "
         "<br><br>"
-        "**Possession** — approximated from StatsBomb possession-team event counts, "
+        "**Possession** - approximated from StatsBomb possession-team event counts, "
         "not GPS or exact ball-tracking. "
         "<br><br>"
-        "**Press events** — combined count of Pressures, Interceptions, Tackles, and "
+        "**Press events** - combined count of Pressures, Interceptions, Tackles, and "
         "Ball Recoveries for the analysed team."
     )
 st.markdown("<br>", unsafe_allow_html=True)
@@ -305,14 +305,14 @@ tab_shot, tab_xg, tab_press = st.tabs(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — SHOT MAP
+# TAB 1 - SHOT MAP
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_shot:
     section_header(
         "Shot Map", icon="🗺️",
         subtitle=f"Home ({home_team}) attacks right · Away ({away_team}) attacks left · bubble = xG",
         help_text=(
-            "Each marker is one shot. **Bubble size = xG** (expected goals) — "
+            "Each marker is one shot. **Bubble size = xG** (expected goals) - "
             "larger bubble means a higher-quality chance. "
             "<br><br>"
             "**★ Goal** · **● On Target (saved)** · **◆ Blocked/Post** · **✕ Off Target** "
@@ -377,7 +377,7 @@ with tab_shot:
             fig.add_trace(go.Scatter(
                 x=sub["x_plot"], y=sub["y_plot"],
                 mode="markers",
-                name=f"{team_label} — {label_suffix}",
+                name=f"{team_label} - {label_suffix}",
                 marker=dict(
                     size=sizes, color=team_color,
                     symbol=symbol, opacity=alpha,
@@ -404,7 +404,7 @@ with tab_shot:
         xg_t = shot_df["xg"].sum()
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric(f"{team_label[:18]} — Shots",     n_s)
+        c1.metric(f"{team_label[:18]} - Shots",     n_s)
         c2.metric("Goals",                           n_g)
         c3.metric("On Target",                       n_ot)
         c4.metric("Total xG",                        f"{xg_t:.2f}")
@@ -421,12 +421,12 @@ with tab_shot:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — xG TIMELINE (both teams)
+# TAB 2 - xG TIMELINE (both teams)
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_xg:
     section_header(
         "xG Timeline", icon="📈",
-        subtitle="Cumulative xG for both teams — divergence from actual goals = luck",
+        subtitle="Cumulative xG for both teams - divergence from actual goals = luck",
         help_text=(
             "The lines show cumulative xG building up shot by shot through the match. "
             "**Stars on the line = actual goals scored.** "
@@ -550,23 +550,23 @@ with tab_xg:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — PRESS ANALYSIS
+# TAB 3 - PRESS ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_press:
     section_header(
         "Press Analysis", icon="🔥",
-        subtitle=f"{our_team} — where and how the press worked",
+        subtitle=f"{our_team} - where and how the press worked",
         help_text=(
             "Shows the spatial distribution of defensive actions for the selected team in this match. "
             "Defensive actions include: **Pressures, Interceptions, Tackles, Ball Recoveries**. "
             "<br><br>"
-            "**Location Map** — dots on the pitch showing where each defensive action happened. "
+            "**Location Map** - dots on the pitch showing where each defensive action happened. "
             "Clustering near the opponent's goal = high press; clustering near your own goal = deep block. "
             "<br><br>"
-            "**Press by Pitch Third** — how many defensive actions occurred in each third. "
+            "**Press by Pitch Third** - how many defensive actions occurred in each third. "
             "High percentage in the attacking third indicates an aggressive, high-press style. "
             "<br><br>"
-            "**Territory Depth by Player** — average x-coordinate of each player's defensive actions. "
+            "**Territory Depth by Player** - average x-coordinate of each player's defensive actions. "
             "Higher value = that player presses further up the pitch. "
             "Useful for spotting which players are anchoring the press vs sitting deep. "
             "<br><br>"
@@ -688,9 +688,9 @@ with tab_press:
                 att_pct = third_total["Attacking"] / max(third_total.sum(), 1) * 100
                 def_pct = third_total["Defensive"] / max(third_total.sum(), 1) * 100
                 if att_pct >= 35:
-                    verdict = f"High press — {att_pct:.0f}% of actions in the attacking third."
+                    verdict = f"High press - {att_pct:.0f}% of actions in the attacking third."
                 elif def_pct >= 40:
-                    verdict = f"Defensive block — {def_pct:.0f}% of actions in their own third."
+                    verdict = f"Defensive block - {def_pct:.0f}% of actions in their own third."
                 else:
                     verdict = "Balanced mid-press across the pitch."
                 st.success(f"**Press style:** {verdict}")

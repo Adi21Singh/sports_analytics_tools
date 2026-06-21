@@ -1,4 +1,4 @@
-"""Reusable UI building blocks — all return HTML strings or call st directly."""
+"""Reusable UI building blocks - all return HTML strings or call st directly."""
 
 from __future__ import annotations
 import plotly.graph_objects as go
@@ -66,6 +66,97 @@ def info_popover(text: str) -> None:
         st.markdown(text, unsafe_allow_html=True)
 
 
+# ── Match hero ────────────────────────────────────────────────────────────────
+
+def match_hero(
+    home: str,
+    away: str,
+    analysing: str,
+    date: str = "",
+    competition: str = "",
+    match_week: str = "",
+) -> None:
+    """Render the full-width match header with team names and context."""
+    home_role  = "analysing ▲" if analysing == home else "home"
+    away_role  = "analysing ▲" if analysing == away else "away"
+    home_cls   = "active" if analysing == home else ""
+    away_cls   = "active" if analysing == away else ""
+
+    meta_parts = [p for p in [competition, date, match_week] if p]
+    meta_html  = " &nbsp;·&nbsp; ".join(meta_parts) if meta_parts else ""
+
+    st.markdown(f"""
+<div class="match-hero">
+  <div class="hero-team">
+    <div class="hero-team-name">{home}</div>
+    <div class="hero-team-role {home_cls}">{home_role}</div>
+  </div>
+  <div class="hero-center">
+    <div class="hero-vs">VS</div>
+    <div class="hero-meta">{meta_html}</div>
+    <div class="hero-badge">La Liga · StatsBomb</div>
+  </div>
+  <div class="hero-team away">
+    <div class="hero-team-name">{away}</div>
+    <div class="hero-team-role {away_cls}">{away_role}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ── Press verdict card ────────────────────────────────────────────────────────
+
+def verdict_card(
+    title: str,
+    description: str,
+    icon: str,
+    stat_value: str,
+    stat_label: str,
+    level: str = "good",   # "good" | "warn" | "bad" | "neutral"
+) -> None:
+    """Render the bold press verdict summary card."""
+    palette = {
+        "good":    (COLORS["success"],  "#0d2e1a", "#1a5c30"),
+        "warn":    (COLORS["warning"],  "#2e1f00", "#5c3d00"),
+        "bad":     (COLORS["danger"],   "#2e0d0d", "#5c1a1a"),
+        "neutral": (COLORS["muted"],    COLORS["surface"], COLORS["border"]),
+    }
+    color, bg, border = palette.get(level, palette["neutral"])
+    label_text = title.upper().replace(" ", "_")
+
+    st.markdown(f"""
+<div class="verdict-card" style="--v-color:{color};--v-bg:{bg};--v-border:{border};--v-label:'{label_text}';">
+  <div class="verdict-icon">{icon}</div>
+  <div class="verdict-body">
+    <div class="verdict-title">{title}</div>
+    <div class="verdict-desc">{description}</div>
+  </div>
+  <div>
+    <div class="verdict-stat">{stat_value}</div>
+    <div class="verdict-stat-label">{stat_label}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ── Stat strip ────────────────────────────────────────────────────────────────
+
+def stat_strip(items: list[dict]) -> None:
+    """
+    Render a horizontal strip of stats.
+    Each item: {"label": str, "value": str, "color": str (optional)}
+    """
+    cells = ""
+    for item in items:
+        color = item.get("color", COLORS["primary"])
+        cells += f"""
+<div class="stat-strip-item" style="--s-color:{color};">
+  <div class="stat-strip-val">{item['value']}</div>
+  <div class="stat-strip-label">{item['label']}</div>
+</div>"""
+    st.markdown(f'<div class="stat-strip">{cells}</div>', unsafe_allow_html=True)
+
+
 # ── Risk badge ────────────────────────────────────────────────────────────────
 
 _BADGE_CLASS = {
@@ -101,7 +192,7 @@ def draw_pitch() -> go.Figure:
     """Return a blank Plotly figure with a football pitch drawn on it."""
     import numpy as np
 
-    _LINE  = "#ffffff"          # white markings — clearly visible on green
+    _LINE  = "#ffffff"          # white markings - clearly visible on green
     _PITCH = "#1a6b2f"          # football pitch green
     _GOAL  = "rgba(0,0,0,0.45)" # slightly darkened goal boxes
     _W     = 1.8                # standard line width
@@ -143,7 +234,7 @@ def draw_pitch() -> go.Figure:
     ))
 
     # ── Penalty arcs (the D) ──────────────────────────────────────────────────
-    arc_half = float(np.arccos(5.5 / 9.15))   # ≈ 0.928 rad — where arc exits box
+    arc_half = float(np.arccos(5.5 / 9.15))   # ≈ 0.928 rad - where arc exits box
 
     # Left D (arc faces right, outside the left penalty box)
     t_L = np.linspace(-arc_half, arc_half, 60)

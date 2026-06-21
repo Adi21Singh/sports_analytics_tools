@@ -1,4 +1,4 @@
-"""Dashboard — season overview, squad fitness status, recent form."""
+"""Dashboard - season overview, squad fitness status, recent form."""
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import pandas as pd
 
 import ui.styles as styles
-from ui.components import kpi_card, kpi_row, section_header, style_chart, info_box
+from ui.components import kpi_card, kpi_row, section_header, style_chart, info_box, info_popover
 from ui.data_source import render_data_source_selector, get_data
 from data.generator import TEAM_NAME
 from config import COLORS, PALETTE
@@ -41,7 +41,16 @@ win_pct = wins / len(matches) * 100
 avg_poss = matches["possession_pct"].mean()
 avg_ppda = matches["ppda"].mean()
 
-section_header("Season Overview", icon="📋")
+section_header("Season Overview", icon="📋",
+               help_text=(
+                   "High-level season performance snapshot from synthetic 2025/26 match data.<br><br>"
+                   "<b>Points</b> - W=3pts, D=1pt, L=0pts.<br>"
+                   "<b>Win Rate</b> - % of matches won.<br>"
+                   "<b>GD</b> - Goal difference (goals for minus goals against).<br>"
+                   "<b>Avg Possession</b> - Average ball possession % across all matches.<br>"
+                   "<b>Avg PPDA</b> - Passes Allowed Per Defensive Action. Lower = more pressing intensity. "
+                   "Below 10 is considered a high press; above 10 the team is allowing opponents to build freely."
+               ))
 kpi_row([
     kpi_card("Points",           pts,              sub=f"{wins}W  {draws}D  {losses}L",  accent=COLORS["primary"]),
     kpi_card("Win Rate",         f"{win_pct:.0f}%",sub=f"{len(matches)} matches played",  accent=COLORS["success"]),
@@ -71,7 +80,15 @@ avg_availability = (
     training.groupby("player_id").size() / max_sessions * 100
 ).mean()
 
-section_header("Squad Readiness", icon="⚕️")
+section_header("Squad Readiness", icon="⚕️",
+               help_text=(
+                   "Current training load status for every player, derived from their ACWR (Acute:Chronic Workload Ratio).<br><br>"
+                   "<b>Optimal</b> - ACWR 0.8-1.3. Player is fit and ready to play.<br>"
+                   "<b>Caution</b> - ACWR 1.3-1.5. Recent load spike - monitor closely, manage minutes.<br>"
+                   "<b>High Risk</b> - ACWR above 1.5. Elevated injury risk - consider resting.<br>"
+                   "<b>Avg Availability</b> - % of training sessions attended across the squad. "
+                   "Below 80% suggests recurring absences worth investigating."
+               ))
 kpi_row([
     kpi_card("Available (Optimal)", risk_counts["Optimal"],      accent=COLORS["success"]),
     kpi_card("Monitor (Caution)",   risk_counts["Caution"],      accent=COLORS["warning"]),
@@ -85,7 +102,11 @@ st.markdown("<br>", unsafe_allow_html=True)
 left, right = st.columns([3, 2])
 
 with left:
-    section_header("Season Results Timeline", icon="📈")
+    section_header("Season Results Timeline", icon="📈",
+                   help_text=(
+                       "Each bar = one match. Bar height = goals scored. Colour = result (green=win, amber=draw, red=loss). "
+                       "The dotted line tracks cumulative points on the right axis - a steeper slope means a better run of form."
+                   ))
     df_m = matches.sort_values("date").copy()
     df_m["match_no"] = range(1, len(df_m) + 1)
     df_m["cum_pts"]  = df_m["result"].map({"Win": 3, "Draw": 1, "Loss": 0}).cumsum()
@@ -113,7 +134,8 @@ with left:
     st.plotly_chart(fig, width='stretch')
 
 with right:
-    section_header("Top Scorers", icon="⚽")
+    section_header("Top Scorers", icon="⚽",
+                   help_text="Goals scored across all matches this season. Hover over a bar to see the player's xG (expected goals) - if actual goals significantly exceed xG, the player is finishing above expected quality.")
     top = (match_players.groupby(["player_name", "position"])
            .agg(goals=("goals", "sum"), xg=("xg", "sum"))
            .reset_index()
@@ -135,7 +157,8 @@ with right:
 b1, b2 = st.columns(2)
 
 with b1:
-    section_header("Avg Distance by Position", icon="🏃")
+    section_header("Avg Distance by Position", icon="🏃",
+                   help_text="Average training session distance covered per position group. Higher values indicate positions covering more ground. Typically: wide players and midfielders cover more distance than strikers and centre-backs.")
     avg_dist = (training.groupby("position")["distance_m"].mean()
                 .reset_index().sort_values("distance_m", ascending=True))
     fig3 = go.Figure(go.Bar(
@@ -150,7 +173,8 @@ with b1:
     st.plotly_chart(fig3, width='stretch')
 
 with b2:
-    section_header("Result Distribution", icon="🥇")
+    section_header("Result Distribution", icon="🥇",
+                   help_text="Season-wide breakdown of wins, draws and losses as a proportion of all matches played. A healthy profile has a large green (win) segment. A large red (loss) segment alongside a small green suggests a team struggling for consistency.")
     counts = matches["result"].value_counts().reset_index()
     counts.columns = ["Result", "Count"]
     color_order = [color_map.get(r, "#aaa") for r in counts["Result"]]

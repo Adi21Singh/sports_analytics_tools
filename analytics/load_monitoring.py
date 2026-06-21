@@ -42,7 +42,7 @@ def calculate_acwr(
     """
     daily = _build_daily(load, dates)
 
-    # Independent EWMA — span ≈ 2*days - 1  →  half-life ≈ days
+    # Independent EWMA - span ≈ 2*days - 1  →  half-life ≈ days
     acute   = daily.ewm(span=acute_days,   adjust=False).mean()
     chronic = daily.ewm(span=chronic_days, adjust=False).mean()
     ratio   = (acute / chronic.replace(0, np.nan)).fillna(0)
@@ -66,7 +66,7 @@ def calculate_acwr_rolling(
     chronic_days: int = 28,
 ) -> pd.DataFrame:
     """
-    Original Gabbett (2016) rolling-average ACWR — kept for comparison.
+    Original Gabbett (2016) rolling-average ACWR - kept for comparison.
 
     NOTE: This method has mathematical coupling (acute is a subset of chronic)
     which inflates correlation and can distort risk classification.

@@ -48,8 +48,8 @@ _POS_MAP: dict[str, str] = {
     "DF,FW": "LB",
 }
 
-# Prefer CDM → CDM key (config uses "CDM" not in keys above — map to closest)
-# config.py has: GK, CB, LB, CDM, CM, CAM, LW, ST — CDM is "CDM"
+# Prefer CDM → CDM key (config uses "CDM" not in keys above - map to closest)
+# config.py has: GK, CB, LB, CDM, CM, CAM, LW, ST - CDM is "CDM"
 _VALID_POSITIONS = set(POSITION_PROFILES.keys())
 
 
@@ -146,7 +146,7 @@ def _build_players(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# ── Step 3: build match_players — disaggregate season totals ──────────────────
+# ── Step 3: build match_players - disaggregate season totals ──────────────────
 
 def _build_match_players(df: pd.DataFrame, players: pd.DataFrame, seed: int) -> pd.DataFrame:
     np.random.seed(seed)
@@ -398,7 +398,7 @@ def load_real_data(
     Load and adapt the FBref CSV.  Returns:
         (players, training, wellness, matches, match_players, events)
 
-    squad_filter — if given, restrict to that team name (e.g. 'Arsenal').
+    squad_filter - if given, restrict to that team name (e.g. 'Arsenal').
     """
     raw = _load_csv(csv_path)
 

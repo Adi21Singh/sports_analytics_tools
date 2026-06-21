@@ -1,7 +1,7 @@
 """
 pages/press_intelligence.py
 ============================
-Press Intelligence — full module:
+Press Intelligence - full module:
   • Configurable PPDA threshold slider
   • Our press timeline + opponent press side-by-side
   • Goal / red-card annotations on the timeline
@@ -26,7 +26,7 @@ from collections import defaultdict
 import ui.styles as styles
 from ui.components import (
     kpi_card, kpi_row, section_header, style_chart,
-    info_box, info_popover,
+    info_box, info_popover, match_hero, verdict_card, stat_strip,
 )
 from config import COLORS
 
@@ -266,9 +266,9 @@ with st.sidebar:
             """
 **Press Intelligence** answers three coach questions:
 
-1. **Trigger** — when is our press working? *(Press Timeline)*
-2. **Release** — when should we drop into a block? *(PPDA collapsing)*
-3. **Substitute** — who will sustain the press? *(Substitution Profiles)*
+1. **Trigger** - when is our press working? *(Press Timeline)*
+2. **Release** - when should we drop into a block? *(PPDA collapsing)*
+3. **Substitute** - who will sustain the press? *(Substitution Profiles)*
 
 It uses StatsBomb event data to compute **PPDA** (Passes Allowed per
 Defensive Action) in 10-minute windows across the match.
@@ -298,17 +298,25 @@ Defensive Action) in 10-minute windows across the match.
     )
 
 
-# ── Page title ────────────────────────────────────────────────────────────────
-st.title("🔍 Press Intelligence")
+# ── Page header ───────────────────────────────────────────────────────────────
 st.markdown(
-    f"<span style='font-size:1.1rem;color:{COLORS['muted']};'>"
-    f"{home_team} vs {away_team} &nbsp;·&nbsp; "
-    f"Analysing: <b style='color:{COLORS['text']};'>{our_team}</b>"
-    f" &nbsp;·&nbsp; Threshold: <b style='color:{COLORS['text']};'>{threshold}</b>"
-    f"</span>",
+    "<p style='font-size:.7rem;text-transform:uppercase;letter-spacing:.15em;"
+    f"color:{COLORS['muted']};font-family:DM Mono,monospace;margin-bottom:.4rem;'>"
+    "Press Intelligence · La Liga 2015/16</p>",
     unsafe_allow_html=True,
 )
-st.divider()
+
+match_date_str = str(sel_row.get("match_date", ""))
+match_week_str = f"Matchday {int(sel_row['match_week'])}" if "match_week" in sel_row and pd.notna(sel_row.get("match_week")) else ""
+
+match_hero(
+    home=home_team,
+    away=away_team,
+    analysing=our_team,
+    date=match_date_str,
+    competition="La Liga",
+    match_week=match_week_str,
+)
 
 
 # ── Compute windows (both perspectives) ──────────────────────────────────────
@@ -376,68 +384,90 @@ direct_pct   = n_direct / max(n_total, 1)
 avg_sb_rate  = direct_wins["second_ball_recovery_rate"].mean() if not direct_wins.empty else 0.0
 avg_psr      = valid_wins["pressing_success_rate"].mean() if not valid_wins.empty else 0.0
 
-kpi_row([
-    kpi_card(
-        "Avg PPDA (Build-up windows)",
-        f"{avg_ppda_bu:.1f}" if not np.isnan(avg_ppda_bu) else "—",
-        sub="excl. Direct/Defensive", accent=COLORS["primary"],
-    ),
-    kpi_card(
-        "Direct/Defensive Windows",
-        f"{n_direct}/{n_total}",
-        sub=f"{direct_pct:.0%} of match", accent=COLORS["secondary"],
-    ),
-    kpi_card(
-        "2nd-Ball Recovery Rate",
-        f"{avg_sb_rate:.0%}" if not direct_wins.empty else "—",
-        sub="Direct windows only", accent=COLORS["warning"],
-    ),
-    kpi_card(
-        "Pressing Success Rate",
-        f"{avg_psr:.0%}",
-        sub="regains / pressures", accent=COLORS["success"],
-    ),
-    kpi_card(
-        "Avg Momentum Index",
-        f"{avg_mom:.0f}/100" if not np.isnan(avg_mom) else "—",
-        sub="0 = poor · 100 = dominant", accent=COLORS["primary"],
-    ),
+# ── Press verdict ─────────────────────────────────────────────────────────────
+ppda_str  = f"{avg_ppda_bu:.1f}" if not np.isnan(avg_ppda_bu) else "-"
+if win_df.empty:
+    n_good = 0
+else:
+    _good_mask = (
+        (win_df["build_up_tendency"] != CATEGORY_DIRECT) &
+        win_df["sufficient_data"] &
+        win_df["ppda"].apply(lambda v: v is not None and not (isinstance(v, float) and np.isnan(v)) and float(v) <= threshold)
+    )
+    n_good = int(_good_mask.sum())
+
+if direct_pct > 0.5:
+    verdict_card(
+        title="Opponent Played Direct",
+        description=(
+            f"{opponent_team} bypassed the press with long balls in {direct_pct:.0%} of windows. "
+            f"PPDA is unreliable here - second-ball recovery rate ({avg_sb_rate:.0%}) is the primary signal. "
+            "Focus on recovery positioning, not high-line triggers."
+        ),
+        icon="⚡",
+        stat_value=f"{avg_sb_rate:.0%}",
+        stat_label="2nd-ball recovery",
+        level="warn",
+    )
+elif direct_pct > 0.25:
+    verdict_card(
+        title="Mixed Build-up Match",
+        description=(
+            f"{opponent_team} alternated between patient build-up and direct play ({direct_pct:.0%} direct windows). "
+            f"Monitor both PPDA (avg {ppda_str}) and second-ball recovery ({avg_sb_rate:.0%}) as complementary signals."
+        ),
+        icon="⚖️",
+        stat_value=ppda_str,
+        stat_label="avg PPDA",
+        level="neutral",
+    )
+elif not np.isnan(avg_ppda_bu) and avg_ppda_bu <= threshold:
+    verdict_card(
+        title="Press Dominant",
+        description=(
+            f"{our_team} controlled the press throughout. {opponent_team} built through their zone "
+            f"and averaged {ppda_str} PPDA - well below the {threshold} collapse threshold. "
+            f"Press success rate of {avg_psr:.0%} confirms the press was winning the ball."
+        ),
+        icon="🔒",
+        stat_value=ppda_str,
+        stat_label="avg PPDA",
+        level="good",
+    )
+else:
+    verdict_card(
+        title="Press Under Pressure",
+        description=(
+            f"{opponent_team} played through {our_team}'s press with an average PPDA of {ppda_str} "
+            f"- above the {threshold} collapse threshold. Check the timeline for the windows where it broke."
+        ),
+        icon="⚠️",
+        stat_value=ppda_str,
+        stat_label="avg PPDA",
+        level="bad",
+    )
+
+# ── Stat strip ────────────────────────────────────────────────────────────────
+stat_strip([
+    {"label": "Avg PPDA",           "value": ppda_str,
+     "color": COLORS["primary"] if not np.isnan(avg_ppda_bu) and avg_ppda_bu <= threshold else COLORS["warning"]},
+    {"label": "Press Success",       "value": f"{avg_psr:.0%}",
+     "color": COLORS["success"] if avg_psr >= 0.30 else COLORS["warning"]},
+    {"label": "2nd-Ball Recovery",   "value": f"{avg_sb_rate:.0%}" if not direct_wins.empty else "-",
+     "color": COLORS["warning"]},
+    {"label": "Direct Windows",      "value": f"{n_direct}/{n_total}",
+     "color": COLORS["muted"]},
+    {"label": "Momentum Index",      "value": f"{avg_mom:.0f}" if not np.isnan(avg_mom) else "-",
+     "color": COLORS["primary"]},
 ])
 
 with st.columns([18, 1])[1]:
     info_popover(
-        "**Avg PPDA (Build-up windows)** — lower is better. Excludes Direct/Defensive "
-        "windows where the opponent barely built through their zone (PPDA is unreliable there).\n\n"
-        "**2nd-Ball Recovery Rate** — in Direct/Defensive windows, how often did we win the "
-        "ball within 5 seconds of an opponent clearance or long ball?\n\n"
-        "**Pressing Success Rate** — % of our pressure events that led to a turnover within 5s.\n\n"
-        "**Momentum Index** — composite score combining PPDA performance (60%) and territory "
-        "depth (40%). It's a heuristic summary — read the full charts before acting on it."
+        "**Avg PPDA** - lower is better. Excludes Direct/Defensive windows.\n\n"
+        "**Press Success** - % of pressure events that led to a turnover within 5s. 30%+ is strong.\n\n"
+        "**2nd-Ball Recovery** - how often we won the ball after an opponent clearance/long ball.\n\n"
+        "**Momentum Index** - composite 0–100 score. Heuristic only - read the full charts."
     )
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# Strategy text
-if direct_pct > 0.5:
-    st.info(
-        f"**Opponent played direct:** {direct_pct:.0%} of windows are Direct/Defensive — "
-        f"{opponent_team} rarely built through their zone. PPDA understates press difficulty. "
-        f"**2nd-ball recovery rate ({avg_sb_rate:.0%}) is the primary signal** — "
-        f"focus on positioning for second balls rather than high-line pressing."
-    )
-elif direct_pct > 0.25:
-    st.warning(
-        f"**Mixed match:** {direct_pct:.0%} of windows show direct play. "
-        f"Monitor PPDA (avg {avg_ppda_bu:.1f}) and 2nd-ball recovery ({avg_sb_rate:.0%}) together."
-    )
-else:
-    verdict = "effective" if not np.isnan(avg_ppda_bu) and avg_ppda_bu <= threshold else "under pressure"
-    st.success(
-        f"**Genuine build-up match:** {opponent_team} built through their zone. "
-        f"PPDA is a reliable signal — press is **{verdict}** (avg {avg_ppda_bu:.1f}, threshold {threshold})."
-    )
-
-st.markdown("<br>", unsafe_allow_html=True)
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
@@ -452,7 +482,7 @@ tab_timeline, tab_context, tab_momentum, tab_subs, tab_history, tab_validator = 
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 1 — PRESS TIMELINE  (our press + opponent press side by side)
+# TAB 1 - PRESS TIMELINE  (our press + opponent press side by side)
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_timeline:
     section_header(
@@ -462,24 +492,25 @@ with tab_timeline:
             "**PPDA** (Passes Allowed per Defensive Action) measures how many passes the opponent "
             "completes in their own defensive zone for each defensive action we make there. "
             "<br><br>"
-            "**Low PPDA = effective press** — we're winning the ball back quickly. "
-            "**High PPDA = press broken** — they're playing through us comfortably. "
+            "**Low PPDA = effective press** - we're winning the ball back quickly. "
+            "**High PPDA = press broken** - they're playing through us comfortably. "
             "<br><br>"
             "**Hatched bars** = Direct/Defensive windows where the opponent rarely passed through "
             "their zone by design, so PPDA is not a reliable signal. Use 2nd-ball recovery rate instead. "
             "<br><br>"
-            "**⚽ / 🟥 markers** = goals and red cards — critical context for any PPDA shift."
+            "**⚽ / 🟥 markers** = goals and red cards - critical context for any PPDA shift."
         ),
     )
 
     info_box(
         "Left chart: <b>our team pressing</b>. Right chart: <b>opponent pressing</b>. "
-        "When our PPDA is low while theirs is high — that's the window to push tempo."
+        "When our PPDA is low while theirs is high - that's the window to push tempo."
     )
 
     def _build_timeline_fig(wdf: pd.DataFrame, pressing_team: str, thresh: float) -> go.Figure:
-        lbls = wdf["window_label"].tolist()
-        y_good, y_poor, y_insuff, y_direct = [], [], [], []
+        lbls       = wdf["window_label"].tolist()
+        ppda_vals  = []
+        dot_colors = []
         hover_texts = []
 
         for _, row in wdf.iterrows():
@@ -489,60 +520,90 @@ with tab_timeline:
             null = ppda is None or (isinstance(ppda, float) and np.isnan(ppda))
 
             if not suff or null:
-                y_good.append(None); y_poor.append(None)
-                y_insuff.append(MIN_EVENTS_GREY_OUT * 0.5); y_direct.append(None)
+                ppda_vals.append(thresh * 0.25)
+                dot_colors.append(_GREY)
                 hover_texts.append(f"<b>{row['window_label']}</b><br>Insufficient data")
             elif tend == CATEGORY_DIRECT:
-                y_good.append(None); y_poor.append(None); y_insuff.append(None)
-                y_direct.append(float(ppda))
+                ppda_vals.append(float(ppda))
+                dot_colors.append(_MUTED)
                 hover_texts.append(
                     f"<b>{row['window_label']}</b><br>"
-                    f"PPDA: {ppda:.1f} (unreliable — direct play)<br>"
+                    f"PPDA: {ppda:.1f} - direct play (unreliable)<br>"
                     f"2nd-ball recovery: {row['second_ball_recovery_rate']:.0%}"
                 )
             elif float(ppda) <= thresh:
-                y_good.append(float(ppda)); y_poor.append(None)
-                y_insuff.append(None); y_direct.append(None)
+                ppda_vals.append(float(ppda))
+                dot_colors.append(_TEAL)
                 hover_texts.append(
-                    f"<b>{row['window_label']}</b><br>PPDA: {ppda:.1f} ✓<br>"
+                    f"<b>{row['window_label']}</b><br>PPDA: {ppda:.1f} ✓ Good press<br>"
                     f"Zone passes: {row['opp_zone_passes']} · Actions: {row['our_defensive_actions']}<br>"
-                    f"Press success: {row['pressing_success_rate']:.0%}"
+                    f"Success rate: {row['pressing_success_rate']:.0%}"
                 )
             else:
-                y_good.append(None); y_poor.append(float(ppda))
-                y_insuff.append(None); y_direct.append(None)
+                ppda_vals.append(float(ppda))
+                dot_colors.append(_AMBER)
                 hover_texts.append(
-                    f"<b>{row['window_label']}</b><br>PPDA: {ppda:.1f} ⚠<br>"
+                    f"<b>{row['window_label']}</b><br>PPDA: {ppda:.1f} ⚠ Collapsing<br>"
                     f"Zone passes: {row['opp_zone_passes']} · Actions: {row['our_defensive_actions']}<br>"
-                    f"Press success: {row['pressing_success_rate']:.0%}"
+                    f"Success rate: {row['pressing_success_rate']:.0%}"
                 )
 
+        max_y = max((v for v in ppda_vals if v), default=thresh * 2) * 1.2
+
         fig = go.Figure()
-        kw  = dict(x=lbls, showlegend=True)
-        fig.add_trace(go.Bar(**kw, name="Good press",   y=y_good,
-                             marker=dict(color=_TEAL, opacity=0.9),
-                             hovertext=hover_texts, hoverinfo="text"))
-        fig.add_trace(go.Bar(**kw, name="Collapsing",   y=y_poor,
-                             marker=dict(color=_AMBER, opacity=0.9),
-                             hovertext=hover_texts, hoverinfo="text"))
-        fig.add_trace(go.Bar(**kw, name="Direct/Def.",  y=y_direct,
-                             marker=dict(color=_MUTED, opacity=0.7,
-                                         pattern=dict(shape="/", fgcolor="rgba(255,255,255,0.4)", size=6)),
-                             hovertext=hover_texts, hoverinfo="text"))
-        fig.add_trace(go.Bar(**kw, name="Low data",     y=y_insuff,
-                             marker=dict(color=_GREY, opacity=0.4),
-                             hovertext=hover_texts, hoverinfo="text"))
-        fig.add_hline(y=thresh, line_dash="dash", line_color=COLORS["danger"],
-                      annotation_text=f"Threshold ({thresh})",
-                      annotation_font_color=COLORS["danger"])
-        fig.update_layout(barmode="overlay", title=dict(
-            text=f"{pressing_team} pressing",
-            font=dict(color=COLORS["text"], size=13),
+
+        # Zone backgrounds
+        fig.add_hrect(y0=0,     y1=thresh,  fillcolor=_TEAL,         opacity=0.05, layer="below", line_width=0)
+        fig.add_hrect(y0=thresh, y1=max_y,  fillcolor=COLORS["danger"], opacity=0.04, layer="below", line_width=0)
+
+        # Thin stems (lollipop)
+        fig.add_trace(go.Bar(
+            x=lbls, y=ppda_vals,
+            marker_color=dot_colors, marker_opacity=0.25,
+            width=0.15, showlegend=False, hoverinfo="skip",
         ))
+
+        # Trend line through readable windows only
+        trend_pairs = [
+            (l, v) for l, v, row in zip(lbls, ppda_vals, wdf.itertuples())
+            if row.sufficient_data and row.build_up_tendency != CATEGORY_DIRECT
+            and row.ppda is not None and not (isinstance(row.ppda, float) and np.isnan(row.ppda))
+        ]
+        if trend_pairs:
+            tx, ty = zip(*trend_pairs)
+            fig.add_trace(go.Scatter(
+                x=list(tx), y=list(ty), mode="lines",
+                line=dict(color=COLORS["text"], width=1, dash="dot"),
+                opacity=0.25, showlegend=False, hoverinfo="skip",
+            ))
+
+        # Dots (lollipop heads)
+        fig.add_trace(go.Scatter(
+            x=lbls, y=ppda_vals, mode="markers",
+            marker=dict(size=16, color=dot_colors,
+                        line=dict(width=2, color=COLORS["bg"])),
+            text=hover_texts, hovertemplate="%{text}<extra></extra>",
+            showlegend=False,
+        ))
+
+        # Legend entries
+        for name, col in [("Good press", _TEAL), ("Collapsing", _AMBER),
+                           ("Direct/Def.", _MUTED), ("Low data", _GREY)]:
+            fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers",
+                                     marker=dict(size=9, color=col), name=name))
+
+        fig.add_hline(y=thresh, line_dash="dash", line_color=COLORS["danger"], line_width=1.5,
+                      annotation_text=f"Threshold ({thresh})",
+                      annotation_font_color=COLORS["danger"], annotation_font_size=10)
+        fig.update_layout(
+            barmode="overlay",
+            title=dict(text=f"<b>{pressing_team}</b>", font=dict(color=COLORS["text"], size=12)),
+        )
         return style_chart(
-            fig, height=320,
-            xaxis=dict(title="Window", gridcolor=COLORS["grid"]),
-            yaxis=dict(title="PPDA  (lower = better)", gridcolor=COLORS["grid"]),
+            fig, height=310,
+            xaxis=dict(title="", gridcolor="rgba(0,0,0,0)", showgrid=False),
+            yaxis=dict(title="PPDA  (lower = better)", gridcolor=COLORS["grid"],
+                       range=[0, max_y]),
         )
 
     # Annotate goal / red-card events on a figure
@@ -593,7 +654,7 @@ with tab_timeline:
 
     # Direct/Defensive detail table
     if not direct_wins.empty:
-        st.markdown("#### Direct/Defensive Windows — Alternative Metric")
+        st.markdown("#### Direct/Defensive Windows - Alternative Metric")
         st.caption("When the opponent plays direct, PPDA is unreliable. Use 2nd-ball recovery rate instead.")
         detail = direct_wins[[
             "window_label", "opp_zone_passes", "long_pass_ratio",
@@ -607,7 +668,7 @@ with tab_timeline:
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 2 — CONTEXT LAYER
+# TAB 2 - CONTEXT LAYER
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_context:
     section_header(
@@ -615,17 +676,17 @@ with tab_context:
         subtitle="Possession · Pressing Success · Defensive Territory Depth",
         help_text=(
             "These three metrics explain **why** PPDA is doing what it's doing. "
-            "They don't replace the press signal — they answer the follow-up question. "
+            "They don't replace the press signal - they answer the follow-up question. "
             "<br><br>"
-            "**Possession by Period** — a press can look broken simply because your team had "
+            "**Possession by Period** - a press can look broken simply because your team had "
             "the ball; high PPDA with high possession is not necessarily a collapse. "
             "<br><br>"
-            "**Pressing Success Rate** — PPDA tells you how often they pass through the press; "
+            "**Pressing Success Rate** - PPDA tells you how often they pass through the press; "
             "this tells you how often the press actually worked when triggered. 30%+ is strong. "
             "<br><br>"
-            "**Territory Depth** — average x-coordinate of our defensive actions per window. "
+            "**Territory Depth** - average x-coordinate of our defensive actions per window. "
             "Below 60m = mid-block; above 80m = genuine high press. "
-            "A dropping depth number often precedes a PPDA rise — it's the early warning signal."
+            "A dropping depth number often precedes a PPDA rise - it's the early warning signal."
         ),
     )
 
@@ -633,76 +694,104 @@ with tab_context:
 
     with c1:
         section_header("Possession by Period", icon="🔵")
+        # Stacked area - both teams, fills sum to ~100%
+        our_poss = (win_df["our_poss_share"] * 100).tolist()
+        opp_poss = (win_df["opp_poss_share"] * 100).tolist()
         fig_poss = go.Figure()
-        fig_poss.add_trace(go.Bar(x=labels, y=win_df["our_poss_share"] * 100,
-                                   name=our_team, marker_color=_TEAL, opacity=0.85))
-        fig_poss.add_trace(go.Bar(x=labels, y=win_df["opp_poss_share"] * 100,
-                                   name=opponent_team, marker_color=_AMBER, opacity=0.65))
-        fig_poss.add_hline(y=50, line_dash="dot", line_color=_GREY)
-        fig_poss = style_chart(fig_poss, height=260, barmode="group",
+        fig_poss.add_trace(go.Scatter(
+            x=labels, y=our_poss, name=our_team,
+            mode="lines", fill="tozeroy",
+            line=dict(color=_TEAL, width=2),
+            fillcolor=f"rgba(0,199,168,0.18)",
+            hovertemplate="%{x}<br>" + our_team + ": %{y:.0f}%<extra></extra>",
+        ))
+        fig_poss.add_trace(go.Scatter(
+            x=labels, y=opp_poss, name=opponent_team,
+            mode="lines", fill="tozeroy",
+            line=dict(color=_AMBER, width=2, dash="dot"),
+            fillcolor=f"rgba(245,158,11,0.10)",
+            hovertemplate="%{x}<br>" + opponent_team + ": %{y:.0f}%<extra></extra>",
+        ))
+        fig_poss.add_hline(y=50, line_dash="dot", line_color=_GREY, line_width=1,
+                            annotation_text="50%", annotation_font_size=9,
+                            annotation_font_color=_GREY)
+        fig_poss = style_chart(fig_poss, height=250,
                                 yaxis=dict(title="Possession %", range=[0, 100],
                                            gridcolor=COLORS["grid"]),
-                                xaxis=dict(title="Window", gridcolor=COLORS["grid"]))
+                                xaxis=dict(gridcolor="rgba(0,0,0,0)", showgrid=False))
         st.plotly_chart(fig_poss, width="stretch")
 
         section_header("Pressing Success Rate", icon="🎯",
                        help_text=(
                            "% of pressure events followed by a turnover within 5 seconds. "
-                           "<br>**30%+** = strong press · **15–30%** = moderate · **&lt;15%** = press triggering but not winning the ball. "
-                           "<br><br>A high success rate with a high PPDA means your press is disorganised; "
-                           "a low success rate with low PPDA means you're applying lots of pressure but the opponent is coping."
+                           "<br>**30%+** = strong · **15–30%** = moderate · **&lt;15%** = press not winning the ball. "
                        ))
-        psr_colors = [
-            _TEAL if r >= 0.30 else _AMBER if r >= 0.15 else _GREY
-            for r in win_df["pressing_success_rate"]
-        ]
-        fig_psr = go.Figure(go.Bar(x=labels, y=win_df["pressing_success_rate"] * 100,
-                                    marker_color=psr_colors, opacity=0.9,
-                                    hovertemplate="%{x}<br>Success: %{y:.1f}%<extra></extra>"))
-        fig_psr.add_hline(y=30, line_dash="dash", line_color=_TEAL,
-                          annotation_text="30% benchmark", annotation_font_color=_TEAL)
-        fig_psr = style_chart(fig_psr, height=240,
-                               yaxis=dict(title="Success Rate %", gridcolor=COLORS["grid"]),
-                               xaxis=dict(title="Window", gridcolor=COLORS["grid"]))
+        psr_vals   = (win_df["pressing_success_rate"] * 100).tolist()
+        psr_colors = [_TEAL if r >= 30 else _AMBER if r >= 15 else _GREY for r in psr_vals]
+        fig_psr = go.Figure()
+        # Lollipop stems
+        fig_psr.add_trace(go.Bar(
+            x=labels, y=psr_vals,
+            marker_color=psr_colors, marker_opacity=0.2,
+            width=0.12, showlegend=False, hoverinfo="skip",
+        ))
+        # Dots
+        fig_psr.add_trace(go.Scatter(
+            x=labels, y=psr_vals, mode="markers",
+            marker=dict(size=14, color=psr_colors, line=dict(width=2, color=COLORS["bg"])),
+            hovertemplate="%{x}<br>Success: %{y:.1f}%<extra></extra>",
+            showlegend=False,
+        ))
+        fig_psr.add_hline(y=30, line_dash="dash", line_color=_TEAL, line_width=1.5,
+                          annotation_text="30% benchmark", annotation_font_color=_TEAL,
+                          annotation_font_size=10)
+        fig_psr.add_hrect(y0=30, y1=100, fillcolor=_TEAL, opacity=0.04, layer="below", line_width=0)
+        fig_psr = style_chart(fig_psr, height=230, barmode="overlay",
+                               yaxis=dict(title="Success %", range=[0, 100],
+                                          gridcolor=COLORS["grid"]),
+                               xaxis=dict(gridcolor="rgba(0,0,0,0)", showgrid=False))
         st.plotly_chart(fig_psr, width="stretch")
 
     with c2:
         section_header("Defensive Territory Depth", icon="🛡️",
                        help_text=(
-                           "Average x-coordinate (StatsBomb: 0–120m) of our defensive actions per window. "
-                           "Higher = pressing further up the pitch. "
-                           "<br><br>"
-                           "**&lt; 60m** = defending in our own half (mid-block or deep block) "
-                           "<br>**60–80m** = midfield press "
-                           "<br>**&gt; 80m** = genuine high press in the opponent's half "
-                           "<br><br>"
-                           "Watch for a downward trend across windows — this often precedes a PPDA rise "
-                           "and is an early warning signal that the press is fading."
+                           "Average x-coordinate of our defensive actions per window. "
+                           "**&lt;60m** = mid-block · **60–80m** = midfield press · **&gt;80m** = high press. "
+                           "A dropping trend is the early warning signal before PPDA rises."
                        ))
-        info_box("Higher = our defensive actions occur further up the pitch. "
-                 "A dropping trend often precedes a PPDA collapse.")
-        depth_colors = [
-            _TEAL if d >= 70 else _AMBER if d >= 50 else COLORS["danger"]
-            for d in win_df["territory_depth"]
-        ]
-        fig_depth = go.Figure(go.Bar(x=labels, y=win_df["territory_depth"],
-                                      marker_color=depth_colors, opacity=0.85,
-                                      hovertemplate="%{x}<br>Depth: %{y:.0f}m<extra></extra>"))
-        fig_depth.add_hline(y=60, line_dash="dot", line_color=_GREY, annotation_text="Midfield")
-        fig_depth.add_hline(y=80, line_dash="dash", line_color=_TEAL, annotation_text="High press zone")
-        fig_depth = style_chart(fig_depth, height=260,
-                                 yaxis=dict(title="Avg x of defensive actions (m)",
-                                            range=[0, 120], gridcolor=COLORS["grid"]),
-                                 xaxis=dict(title="Window", gridcolor=COLORS["grid"]))
+        info_box("A <b>falling line</b> here typically precedes a PPDA spike - it's the earliest warning the press is retreating.")
+        depth_vals = win_df["territory_depth"].tolist()
+        pt_colors  = [_TEAL if d >= 70 else _AMBER if d >= 50 else COLORS["danger"] for d in depth_vals]
+        fig_depth = go.Figure()
+        # Zone bands
+        fig_depth.add_hrect(y0=0,   y1=40,  fillcolor=COLORS["danger"], opacity=0.07, layer="below", line_width=0)
+        fig_depth.add_hrect(y0=40,  y1=60,  fillcolor=_AMBER,           opacity=0.06, layer="below", line_width=0)
+        fig_depth.add_hrect(y0=60,  y1=80,  fillcolor=_TEAL,            opacity=0.05, layer="below", line_width=0)
+        fig_depth.add_hrect(y0=80,  y1=120, fillcolor=_TEAL,            opacity=0.10, layer="below", line_width=0)
+        # Area line
+        fig_depth.add_trace(go.Scatter(
+            x=labels, y=depth_vals, mode="lines+markers",
+            line=dict(color=_TEAL, width=2.5, shape="spline"),
+            fill="tozeroy", fillcolor="rgba(0,199,168,0.07)",
+            marker=dict(size=9, color=pt_colors, line=dict(width=2, color=COLORS["bg"])),
+            hovertemplate="%{x}<br>Territory depth: %{y:.0f}m<extra></extra>",
+            showlegend=False,
+        ))
+        # Zone labels
+        for y, txt in [(20, "Defensive"), (50, "Midfield"), (70, "Press zone"), (95, "High press")]:
+            fig_depth.add_annotation(x=labels[-1], y=y, text=txt, showarrow=False,
+                                      font=dict(size=9, color=COLORS["muted"]),
+                                      xanchor="right", yanchor="middle")
+        fig_depth = style_chart(fig_depth, height=250,
+                                 yaxis=dict(title="Avg depth (m)", range=[0, 120],
+                                            gridcolor=COLORS["grid"]),
+                                 xaxis=dict(gridcolor="rgba(0,0,0,0)", showgrid=False))
         st.plotly_chart(fig_depth, width="stretch")
 
         section_header("2nd-Ball Recovery by Third", icon="⚽",
                        help_text=(
-                           "After an opponent clearance or long ball in their defensive zone, "
-                           "which third of the pitch did we win the second ball? "
-                           "<br><br>"
-                           "**Attacking third** recoveries are most dangerous and signal a high press that's winning second balls. "
-                           "<br>**Defensive third** recoveries mean we're conceding the first touch and fighting for it deep."
+                           "After an opponent clearance or long ball, where on the pitch did we win the second ball? "
+                           "**Attacking third** recoveries = high press working. **Defensive third** = we're conceding ground."
                        ))
         thirds_data = {"Defensive": 0, "Middle": 0, "Attacking": 0}
         for _, row in win_df.iterrows():
@@ -710,34 +799,45 @@ with tab_context:
             if isinstance(thirds, dict):
                 for k in thirds_data:
                     thirds_data[k] += thirds.get(k, 0)
-        fig_thirds = go.Figure(go.Pie(
-            labels=list(thirds_data.keys()),
-            values=list(thirds_data.values()),
-            marker=dict(colors=[COLORS["danger"], COLORS["warning"], _TEAL]),
-            hole=0.5, textinfo="label+percent",
-        ))
-        fig_thirds = style_chart(fig_thirds, height=240)
-        fig_thirds.update_traces(textfont_color=COLORS["text"])
+        total_rec = sum(thirds_data.values()) or 1
+        # Horizontal stacked bar - more readable than a donut
+        fig_thirds = go.Figure()
+        colors_thirds = [COLORS["danger"], COLORS["warning"], _TEAL]
+        for (label_t, val), col in zip(thirds_data.items(), colors_thirds):
+            fig_thirds.add_trace(go.Bar(
+                name=label_t, x=[val / total_rec * 100], y=["Recoveries"],
+                orientation="h", marker_color=col, marker_opacity=0.85,
+                text=f"{label_t}<br>{val / total_rec:.0%}",
+                textposition="inside",
+                insidetextanchor="middle",
+                textfont=dict(color="white", size=11),
+                hovertemplate=f"{label_t}: {val} ({val/total_rec:.0%})<extra></extra>",
+            ))
+        fig_thirds = style_chart(fig_thirds, height=130, barmode="stack",
+                                  xaxis=dict(title="% of recoveries", range=[0, 100],
+                                             gridcolor=COLORS["grid"]),
+                                  yaxis=dict(showticklabels=False),
+                                  legend=dict(orientation="h", y=-0.4, x=0))
         st.plotly_chart(fig_thirds, width="stretch")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 3 — MOMENTUM INDEX
+# TAB 3 - MOMENTUM INDEX
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_momentum:
     section_header(
         "Match Momentum Index", icon="📈",
-        subtitle=f"PPDA component (60%) + Territory Depth (40%) — composite 0–100 score per window",
+        subtitle=f"PPDA component (60%) + Territory Depth (40%) - composite 0–100 score per window",
         help_text=(
             "A single score per 10-minute window combining two signals: "
             "<br><br>"
-            "**PPDA score (60% weight)** — 100 when PPDA → 0 (perfect press), "
+            "**PPDA score (60% weight)** - 100 when PPDA → 0 (perfect press), "
             "50 at the collapse threshold, 0 at 2× threshold. "
             "<br><br>"
-            "**Territory score (40% weight)** — (territory depth / 120m) × 100. "
+            "**Territory score (40% weight)** - (territory depth / 120m) × 100. "
             "Higher x position = higher score. "
             "<br><br>"
-            "**⚠ Heuristic only** — this formula is documented but has not been validated against "
+            "**⚠ Heuristic only** - this formula is documented but has not been validated against "
             "outcomes. Always read the underlying PPDA and territory charts. "
             f"Direct/Defensive windows have their PPDA component down-weighted by "
             f"{int(DIRECT_PPDA_WEIGHT_FACTOR * 100)}% to prevent an artefactually low PPDA "
@@ -746,7 +846,7 @@ with tab_momentum:
     )
 
     info_box(
-        f"<b>Heuristic summary</b> — the index combines PPDA and territory depth into one number. "
+        f"<b>Heuristic summary</b> - the index combines PPDA and territory depth into one number. "
         f"It is explicitly labelled as a heuristic: read the underlying charts, not just the index. "
         f"Direct/Defensive windows (◆) have their PPDA weight reduced by "
         f"{int((1 - DIRECT_PPDA_WEIGHT_FACTOR) * 100)}% to avoid false high scores."
@@ -756,56 +856,81 @@ with tab_momentum:
     tend_list = win_df["build_up_tendency"].tolist()
     suff_list = win_df["sufficient_data"].tolist()
 
-    fig_mom = go.Figure()
-    for label, mom, tend, suff in zip(labels, mom_vals, tend_list, suff_list):
-        if mom is None or (isinstance(mom, float) and np.isnan(mom)):
-            continue
-        if not suff:
-            color = _GREY
-        elif tend == CATEGORY_DIRECT:
-            color = _MUTED
-        elif float(mom) >= 60:
-            color = _TEAL
-        else:
-            color = _AMBER
-        fig_mom.add_trace(go.Scatter(
-            x=[label], y=[mom],
-            mode="markers",
-            marker=dict(size=12, color=color,
-                        symbol="circle" if tend != CATEGORY_DIRECT else "diamond",
-                        line=dict(color=COLORS["bg"], width=1)),
-            showlegend=False,
-            hovertemplate=(
-                f"<b>{label}</b><br>Momentum: {mom:.0f}/100<br>"
-                f"Tendency: {tend}<extra></extra>"
-            ),
-        ))
-
+    # Build clean series: only sufficient+non-null windows for the continuous line
     valid_mom = [
-        (l, m) for l, m, s in zip(labels, mom_vals, suff_list)
+        (l, float(m), t)
+        for l, m, t, s in zip(labels, mom_vals, tend_list, suff_list)
         if s and m is not None and not (isinstance(m, float) and np.isnan(m))
     ]
+
+    fig_mom = go.Figure()
+
     if valid_mom:
-        xl, yl = zip(*valid_mom)
+        vx, vy, vt = zip(*valid_mom)
+        vx, vy, vt = list(vx), list(vy), list(vt)
+
+        # Neutral zone background
+        fig_mom.add_hrect(y0=50, y1=105, fillcolor=_TEAL, opacity=0.04, layer="below", line_width=0)
+        fig_mom.add_hrect(y0=0,  y1=50,  fillcolor=_AMBER, opacity=0.04, layer="below", line_width=0)
+
+        # Filled area - above 50 (teal) and below 50 (amber) as two traces
+        vy_above = [v if v >= 50 else 50 for v in vy]
+        vy_below = [v if v <= 50 else 50 for v in vy]
+
         fig_mom.add_trace(go.Scatter(
-            x=list(xl), y=list(yl), mode="lines",
-            line=dict(color=COLORS["primary"], width=2, dash="dot"),
+            x=vx, y=vy_above, mode="none",
+            fill="tozeroy", fillcolor="rgba(0,199,168,0.15)",
+            showlegend=False, hoverinfo="skip",
+        ))
+        fig_mom.add_trace(go.Scatter(
+            x=vx, y=[50] * len(vx), mode="none",
+            fill="tozeroy", fillcolor="rgba(245,158,11,0.10)",
+            showlegend=False, hoverinfo="skip",
+        ))
+        for i_neg, v in enumerate(vy_below):
+            if v < 50:
+                pass  # below fill handled by the second trace
+
+        # Main line
+        fig_mom.add_trace(go.Scatter(
+            x=vx, y=vy, mode="lines",
+            line=dict(color=_TEAL, width=2.5, shape="spline"),
             showlegend=False, hoverinfo="skip",
         ))
 
-    fig_mom.add_hline(y=50, line_dash="dash", line_color=_GREY,
-                      annotation_text="Neutral (50)", annotation_font_color=_GREY)
-    fig_mom = style_chart(fig_mom, height=360,
-                           xaxis=dict(title="Window", gridcolor=COLORS["grid"]),
-                           yaxis=dict(title="Momentum Index (0–100)", range=[0, 105],
+        # Dots coloured by tendency + value
+        dot_colors_m = []
+        dot_symbols_m = []
+        dot_hover_m = []
+        for l, m, t in zip(vx, vy, vt):
+            col = _MUTED if t == CATEGORY_DIRECT else (_TEAL if m >= 60 else _AMBER)
+            sym = "diamond" if t == CATEGORY_DIRECT else "circle"
+            dot_colors_m.append(col)
+            dot_symbols_m.append(sym)
+            dot_hover_m.append(
+                f"<b>{l}</b><br>Momentum: {m:.0f}/100<br>Tendency: {t}"
+            )
+        fig_mom.add_trace(go.Scatter(
+            x=vx, y=vy, mode="markers",
+            marker=dict(size=13, color=dot_colors_m, symbol=dot_symbols_m,
+                        line=dict(width=2, color=COLORS["bg"])),
+            text=dot_hover_m, hovertemplate="%{text}<extra></extra>",
+            showlegend=False,
+        ))
+
+    fig_mom.add_hline(y=50, line_color=_GREY, line_width=1.5, line_dash="dot",
+                      annotation_text="Neutral  50", annotation_font_color=_GREY,
+                      annotation_font_size=10)
+    fig_mom = style_chart(fig_mom, height=340,
+                           xaxis=dict(gridcolor="rgba(0,0,0,0)", showgrid=False),
+                           yaxis=dict(title="Momentum (0–100)", range=[0, 105],
                                       gridcolor=COLORS["grid"]))
     st.plotly_chart(fig_mom, width="stretch")
 
     st.markdown(
-        f"<small style='color:{_TEAL}'>● Good press (≥ 60)</small> &nbsp; "
+        f"<small style='color:{_TEAL}'>● Dominant (≥ 60)</small> &nbsp; "
         f"<small style='color:{_AMBER}'>● Under pressure (&lt; 60)</small> &nbsp; "
-        f"<small style='color:{_MUTED}'>◆ Direct/Defensive (PPDA down-weighted)</small> &nbsp; "
-        f"<small style='color:{_GREY}'>● Insufficient data</small>",
+        f"<small style='color:{_MUTED}'>◆ Direct/Defensive</small>",
         unsafe_allow_html=True,
     )
 
@@ -817,14 +942,14 @@ with tab_momentum:
     mom_table.columns = ["Window", "Build-up Tendency", "PPDA",
                           "Territory (m)", "Momentum", "Sufficient Data"]
     mom_table["PPDA"]     = mom_table["PPDA"].apply(
-        lambda v: f"{v:.1f}" if v is not None and not (isinstance(v, float) and np.isnan(v)) else "—")
+        lambda v: f"{v:.1f}" if v is not None and not (isinstance(v, float) and np.isnan(v)) else "-")
     mom_table["Momentum"] = mom_table["Momentum"].apply(
-        lambda v: f"{v:.0f}" if v is not None else "—")
+        lambda v: f"{v:.0f}" if v is not None else "-")
     st.dataframe(mom_table, width="stretch", hide_index=True)
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 4 — SUBSTITUTION PRESSING PROFILES
+# TAB 4 - SUBSTITUTION PRESSING PROFILES
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_subs:
     section_header(
@@ -833,19 +958,19 @@ with tab_subs:
         help_text=(
             "Use this to decide who to bring on to sustain or restart the press. "
             "<br><br>"
-            "**Pressures/Match** — average number of pressure events per appearance. "
+            "**Pressures/Match** - average number of pressure events per appearance. "
             "High = pressing machine. Low = conserves energy for other roles. "
             "<br><br>"
-            "**Regain Rate** — % of a player's pressures that led to the team winning "
+            "**Regain Rate** - % of a player's pressures that led to the team winning "
             "the ball within 5 seconds. High rate = pressing in the right areas, not just volume. "
             "<br><br>"
-            "**Late Pressures/Match** — average pressures in the last 20 minutes of each "
-            "appearance. This is the key substitution signal — a player who presses as hard "
+            "**Late Pressures/Match** - average pressures in the last 20 minutes of each "
+            "appearance. This is the key substitution signal - a player who presses as hard "
             "in minute 80 as minute 10 maintains press intensity when others fatigue. "
             "<br><br>"
             "⚠ Stats are computed from locally cached matches only. Players with fewer than "
             "2 cached appearances are excluded. This is not per-90 (exact minutes unavailable "
-            "from StatsBomb events alone) — treat it as relative ranking, not absolute."
+            "from StatsBomb events alone) - treat it as relative ranking, not absolute."
         ),
     )
 
@@ -858,7 +983,7 @@ with tab_subs:
     profiles_df = _build_pressing_profiles()
 
     if profiles_df.empty:
-        st.warning("No pressing profiles available — no event files cached yet. Select a match in the sidebar to cache its events.")
+        st.warning("No pressing profiles available - no event files cached yet. Select a match in the sidebar to cache its events.")
     else:
         # Team filter
         all_teams = sorted(profiles_df["team"].unique().tolist())
@@ -940,7 +1065,7 @@ with tab_subs:
             st.dataframe(compare, width="stretch", hide_index=True)
 
             # Full ranked table
-            with st.expander("All players — ranked by Pressures/Match"):
+            with st.expander("All players - ranked by Pressures/Match"):
                 display_cols = {
                     "player": "Player", "team": "Team",
                     "matches": "Matches", "press_per_match": "Press/Match",
@@ -952,21 +1077,21 @@ with tab_subs:
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 5 — OPPONENT SEASON PRESS HISTORY
+# TAB 5 - OPPONENT SEASON PRESS HISTORY
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_history:
     section_header(
         "Opponent Season Press History", icon="📋",
         subtitle=f"Season-long PPDA trend for {opponent_team} as pressing team (cached matches only)",
         help_text=(
-            "Shows how effectively the opponent presses across the season — not just against you. "
+            "Shows how effectively the opponent presses across the season - not just against you. "
             "<br><br>"
             "A team whose PPDA rises consistently after minute 60 **across many matches** "
             "is showing a structural weakness, not a one-off. That pattern is actionable: "
             "absorb their press early and push tempo in the second half. "
             "<br><br>"
             "Only matches whose events are locally cached are shown. "
-            "The sample size is displayed below the chart — "
+            "The sample size is displayed below the chart - "
             "patterns from &lt;5 matches should be treated as preliminary."
         ),
     )
@@ -984,50 +1109,78 @@ with tab_history:
             "Select and load some of their matches from the sidebar to build the history."
         )
     else:
-        fig_hist = go.Figure()
-        bar_colors = [
-            _TEAL if v <= threshold else _AMBER
-            for v in hist_df["Avg PPDA"]
-        ]
-
-        # Highlight current match
+        season_avg    = hist_df["Avg PPDA"].mean()
         current_point = hist_df[hist_df["match_id"] == match_id]
+        pt_colors     = [_TEAL if v <= threshold else _AMBER for v in hist_df["Avg PPDA"]]
 
-        fig_hist.add_trace(go.Bar(
-            x=hist_df["Date"],
-            y=hist_df["Avg PPDA"],
-            marker_color=bar_colors, opacity=0.8,
-            customdata=hist_df[["Opponent", "H/A"]].values,
-            hovertemplate=(
-                "<b>%{x}</b><br>"
-                "vs %{customdata[0]} (%{customdata[1]})<br>"
-                "Avg PPDA: %{y:.2f}<extra></extra>"
-            ),
+        # Trend line via linear regression
+        x_idx = np.arange(len(hist_df))
+        if len(x_idx) >= 2:
+            coeffs = np.polyfit(x_idx, hist_df["Avg PPDA"].values, 1)
+            trend_y = np.polyval(coeffs, x_idx)
+        else:
+            trend_y = hist_df["Avg PPDA"].values
+
+        _ppda_max  = float(hist_df["Avg PPDA"].max())
+        _y_max     = max(_ppda_max * 1.25, threshold * 1.4)
+
+        fig_hist = go.Figure()
+
+        # Zone backgrounds - capped at dynamic y_max, not a magic number
+        fig_hist.add_hrect(y0=0,         y1=threshold, fillcolor=_TEAL,  opacity=0.05, layer="below", line_width=0)
+        fig_hist.add_hrect(y0=threshold, y1=_y_max,    fillcolor=_AMBER, opacity=0.04, layer="below", line_width=0)
+
+        # Connecting line
+        fig_hist.add_trace(go.Scatter(
+            x=hist_df["Date"], y=hist_df["Avg PPDA"],
+            mode="lines", line=dict(color=COLORS["border"], width=1.5),
+            showlegend=False, hoverinfo="skip",
         ))
 
+        # Trend line
+        fig_hist.add_trace(go.Scatter(
+            x=hist_df["Date"], y=trend_y,
+            mode="lines",
+            line=dict(color=COLORS["muted"], width=1.5, dash="dot"),
+            name="Trend", opacity=0.6, hoverinfo="skip",
+        ))
+
+        # Match dots
+        fig_hist.add_trace(go.Scatter(
+            x=hist_df["Date"], y=hist_df["Avg PPDA"],
+            mode="markers",
+            marker=dict(size=13, color=pt_colors, line=dict(width=2, color=COLORS["bg"])),
+            customdata=hist_df[["Opponent", "H/A"]].values,
+            hovertemplate=(
+                "<b>%{x}</b><br>vs %{customdata[0]} (%{customdata[1]})<br>"
+                "Avg PPDA: %{y:.2f}<extra></extra>"
+            ),
+            showlegend=False,
+        ))
+
+        # Current match star
         if not current_point.empty:
             fig_hist.add_trace(go.Scatter(
                 x=current_point["Date"], y=current_point["Avg PPDA"],
                 mode="markers",
-                marker=dict(size=14, color=COLORS["primary"],
-                            symbol="star", line=dict(width=2, color=COLORS["bg"])),
-                name="Current match",
+                marker=dict(size=18, color=COLORS["primary"], symbol="star",
+                            line=dict(width=2, color=COLORS["bg"])),
+                name="This match",
                 hovertemplate="<b>Current match</b><br>PPDA: %{y:.2f}<extra></extra>",
             ))
 
         fig_hist.add_hline(y=threshold, line_dash="dash", line_color=COLORS["danger"],
+                            line_width=1.5,
                             annotation_text=f"Threshold ({threshold})",
-                            annotation_font_color=COLORS["danger"])
-
-        season_avg = hist_df["Avg PPDA"].mean()
+                            annotation_font_color=COLORS["danger"], annotation_font_size=10)
         fig_hist.add_hline(y=season_avg, line_dash="dot", line_color=_GREY,
-                            annotation_text=f"Season avg ({season_avg:.1f})",
-                            annotation_font_color=_GREY)
+                            annotation_text=f"Season avg {season_avg:.1f}",
+                            annotation_font_color=_GREY, annotation_font_size=10)
 
-        fig_hist = style_chart(fig_hist, height=340,
-                                xaxis=dict(title="Match Date", gridcolor=COLORS["grid"]),
-                                yaxis=dict(title=f"Avg PPDA ({opponent_team} pressing)",
-                                           gridcolor=COLORS["grid"]))
+        fig_hist = style_chart(fig_hist, height=320,
+                                xaxis=dict(title="", gridcolor="rgba(0,0,0,0)", showgrid=False),
+                                yaxis=dict(title="Avg PPDA (pressing)", gridcolor=COLORS["grid"],
+                                           range=[0, _y_max]))
         st.plotly_chart(fig_hist, width="stretch")
 
         n_matches = len(hist_df)
@@ -1045,7 +1198,7 @@ with tab_history:
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 6 — THRESHOLD VALIDATOR
+# TAB 6 - THRESHOLD VALIDATOR
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_validator:
     section_header(
@@ -1057,7 +1210,7 @@ with tab_validator:
             "<br><br>"
             "**Why this matters:** a collapse threshold is only worth using if it separates "
             "something meaningful. The validator confirms what fraction of windows are Build-up, "
-            "Mixed, or Direct/Defensive — justifying which windows PPDA should be applied to. "
+            "Mixed, or Direct/Defensive - justifying which windows PPDA should be applied to. "
             "<br><br>"
             "The PPDA distribution (mean, std, quartiles) shows where the current threshold "
             "sits relative to the full season. The default 10.0 is derived from this data."
@@ -1066,7 +1219,7 @@ with tab_validator:
 
     info_box(
         "Runs the PPDA engine across all cached La Liga 2015/16 matches. "
-        "Results are cached after the first run — click <b>Run / Refresh</b> to update."
+        "Results are cached after the first run - click <b>Run / Refresh</b> to update."
     )
 
     if st.button("Run / Refresh Threshold Validator", type="primary"):
@@ -1080,17 +1233,17 @@ with tab_validator:
             st.error(results["error"])
         else:
             v1, v2, v3, v4 = st.columns(4)
-            v1.metric("Matches processed", results.get("n_matches", "—"))
-            v2.metric("Total windows",     results.get("n_windows_total", "—"))
-            v3.metric("Valid windows",     results.get("n_windows_valid", "—"))
+            v1.metric("Matches processed", results.get("n_matches", "-"))
+            v2.metric("Total windows",     results.get("n_windows_total", "-"))
+            v3.metric("Valid windows",     results.get("n_windows_valid", "-"))
             v4.metric("Threshold used",    f"PPDA = {results.get('collapse_threshold', PPDA_COLLAPSE_THRESHOLD)}")
 
             st.markdown("#### PPDA Distribution (Build-up + Mixed windows)")
             p1, p2, p3, p4 = st.columns(4)
-            p1.metric("Mean PPDA",    results.get("ppda_mean", "—"))
-            p2.metric("Std Dev",      results.get("ppda_std",  "—"))
-            p3.metric("25th pctile",  results.get("ppda_p25",  "—"))
-            p4.metric("75th pctile",  results.get("ppda_p75",  "—"))
+            p1.metric("Mean PPDA",    results.get("ppda_mean", "-"))
+            p2.metric("Std Dev",      results.get("ppda_std",  "-"))
+            p3.metric("25th pctile",  results.get("ppda_p25",  "-"))
+            p4.metric("75th pctile",  results.get("ppda_p75",  "-"))
 
             st.markdown("#### Build-up Category Distribution (all valid windows)")
             cat_dist = results.get("category_distribution", {})
@@ -1126,12 +1279,12 @@ with tab_validator:
                     yaxis=dict(title="% of valid windows", range=[0, 100],
                                gridcolor=COLORS["grid"]),
                 )
-                fig_cat.update_layout(title="Window Category Distribution — La Liga 2015/16")
+                fig_cat.update_layout(title="Window Category Distribution - La Liga 2015/16")
                 st.plotly_chart(fig_cat, width="stretch")
 
                 direct_frac = cat_dist.get(CATEGORY_DIRECT, {}).get("fraction", 0)
                 st.success(
-                    f"**{direct_frac:.1%}** of analysed windows were classified Direct/Defensive — "
+                    f"**{direct_frac:.1%}** of analysed windows were classified Direct/Defensive - "
                     f"excluded from PPDA-based momentum scoring. Second-ball recovery rate used instead."
                 )
     else:

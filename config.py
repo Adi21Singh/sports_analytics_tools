@@ -1,4 +1,4 @@
-"""Central configuration — colors, thresholds, position profiles, chart defaults."""
+"""Central configuration - colors, thresholds, position profiles, chart defaults."""
 
 from __future__ import annotations
 
@@ -58,10 +58,10 @@ WELLNESS_LABELS = {
     "stress_score":   "Stress (inv.)",
 }
 
-# Wellness composite weights — McLean et al. (2010), Hooper & Mackinnon (1995)
+# Wellness composite weights - McLean et al. (2010), Hooper & Mackinnon (1995)
 # Sleep quality and subjective fatigue are the strongest predictors of next-day
 # performance and injury risk.  Equal weighting (0.2 each) was the original
-# error — replaced with evidence-based differential weighting.
+# error - replaced with evidence-based differential weighting.
 WELLNESS_WEIGHTS = {
     "sleep_score":    0.30,   # inverted: higher sleep = higher readiness
     "fatigue_score":  0.30,   # inverted: lower fatigue = higher readiness

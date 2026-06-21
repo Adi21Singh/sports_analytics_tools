@@ -127,8 +127,8 @@ def compute_xg(
 
     Coefficients fitted via logistic regression on 1,905 shots (80 La Liga
     2015/16 matches).  Validated metrics vs StatsBomb's own model:
-      Our model  — log-loss 0.283, Brier 0.082, calibration 1.000
-      StatsBomb  — log-loss 0.267, Brier 0.077  (upper bound)
+      Our model  - log-loss 0.283, Brier 0.082, calibration 1.000
+      StatsBomb  - log-loss 0.267, Brier 0.077  (upper bound)
     We are within 5.7% of StatsBomb log-loss with a perfectly calibrated
     mean predicted xG.  Correlation with StatsBomb xG values: r = 0.82.
 
@@ -146,7 +146,7 @@ def compute_xg(
     Remaining limitations (require data not in current pipeline):
       - Goalkeeper position / set / diving at shot moment
       - Number of defenders in shot lane
-      - Assist type (through ball / cross / carry) — adds ~3% AUC
+      - Assist type (through ball / cross / carry) - adds ~3% AUC
       - Game state (minute, score) effects
     """
     # Penalties are handled separately: joint-fitted logistic models conflate
