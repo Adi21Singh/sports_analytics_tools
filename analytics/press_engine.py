@@ -20,12 +20,14 @@ second-ball recovery rate as the headline metric instead of a misleading colour.
 from __future__ import annotations
 import os
 import json
+import logging
 import numpy as np
 import pandas as pd
 
 try:
     from statsbombpy import sb as _sb
     SB_AVAILABLE = True
+    logging.getLogger("statsbombpy").setLevel(logging.ERROR)
 except ImportError:
     SB_AVAILABLE = False
 

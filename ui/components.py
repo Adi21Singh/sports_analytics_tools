@@ -43,13 +43,27 @@ def kpi_row(cards: list[str]) -> None:
 
 # ── Section header ────────────────────────────────────────────────────────────
 
-def section_header(title: str, subtitle: str = "", icon: str = "") -> None:
+def section_header(title: str, subtitle: str = "", icon: str = "", help_text: str = "") -> None:
     icon_span = f'<span style="font-size:1.2rem;">{icon}</span>' if icon else ""
     sub_html  = f'<p class="section-sub">{subtitle}</p>' if subtitle else ""
-    st.markdown(
-        f'<div class="section-header">{icon_span}<h3>{title}</h3></div>{sub_html}',
-        unsafe_allow_html=True,
-    )
+    html = f'<div class="section-header">{icon_span}<h3>{title}</h3></div>{sub_html}'
+    if help_text:
+        c1, c2 = st.columns([18, 1])
+        with c1:
+            st.markdown(html, unsafe_allow_html=True)
+        with c2:
+            st.markdown("<div style='padding-top:6px'>", unsafe_allow_html=True)
+            with st.popover("ⓘ", width="stretch"):
+                st.markdown(help_text, unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(html, unsafe_allow_html=True)
+
+
+def info_popover(text: str) -> None:
+    """Standalone ⓘ popover for inline use next to any element."""
+    with st.popover("ⓘ", width="content"):
+        st.markdown(text, unsafe_allow_html=True)
 
 
 # ── Risk badge ────────────────────────────────────────────────────────────────
@@ -98,21 +112,21 @@ def draw_pitch() -> go.Figure:
     # ── Pitch shapes ─────────────────────────────────────────────────────────
     shapes = [
         dict(type="rect", x0=0,    y0=0,     x1=105,  y1=68,    # outer boundary
-             line=dict(color=_LINE, width=_WH), fillcolor=_PITCH),
+             line=dict(color=_LINE, width=_WH), fillcolor=_PITCH,           layer="below"),
         dict(type="rect", x0=0,    y0=13.84, x1=16.5, y1=54.16, # left penalty area
-             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)"),
+             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)",  layer="below"),
         dict(type="rect", x0=88.5, y0=13.84, x1=105,  y1=54.16, # right penalty area
-             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)"),
+             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)",  layer="below"),
         dict(type="rect", x0=0,    y0=24.84, x1=5.5,  y1=43.16, # left 6-yard box
-             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)"),
+             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)",  layer="below"),
         dict(type="rect", x0=99.5, y0=24.84, x1=105,  y1=43.16, # right 6-yard box
-             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)"),
+             line=dict(color=_LINE, width=_W),  fillcolor="rgba(0,0,0,0)",  layer="below"),
         dict(type="line", x0=52.5, y0=0,     x1=52.5, y1=68,    # halfway line
-             line=dict(color=_LINE, width=_W)),
+             line=dict(color=_LINE, width=_W),                               layer="below"),
         dict(type="rect", x0=105,  y0=30.34, x1=107,  y1=37.66, # right goal
-             line=dict(color=_LINE, width=_W),  fillcolor=_GOAL),
+             line=dict(color=_LINE, width=_W),  fillcolor=_GOAL,            layer="below"),
         dict(type="rect", x0=-2,   y0=30.34, x1=0,    y1=37.66, # left goal
-             line=dict(color=_LINE, width=_W),  fillcolor=_GOAL),
+             line=dict(color=_LINE, width=_W),  fillcolor=_GOAL,            layer="below"),
     ]
     for s in shapes:
         fig.add_shape(**s)
