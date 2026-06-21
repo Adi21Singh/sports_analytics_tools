@@ -1,300 +1,248 @@
 ---
-title: Sports Analytics Tool
+title: FC Analytics United
 emoji: ⚽
 colorFrom: green
 colorTo: blue
 sdk: streamlit
-sdk_version: 1.35.0
+sdk_version: 1.36.0
 app_file: app.py
 pinned: false
 ---
 
-# Sports Analytics Tool — User Manual
+# FC Analytics United
 
-**Module:** MIS41500 Sports & Performance Analytics  
-**Component:** Group Assessment (40%)  
-**Team:** FC Analytics United  
+**Module:** MIS41500 Sports and Performance Analytics
+**Assessment:** Group Assignment (40%)
+**Team:** FC Analytics United
 
----
-
-## 1. Overview
-
-This tool is an **interactive football analytics dashboard** built with Streamlit. It enables coaches, managers, and medical staff to monitor player performance, track training load, assess injury risk, and analyse match data — all from a single web-based interface.
-
-The tool ships with **synthetic but realistic** data for a 25-player professional football squad spanning one season (Aug 2024 – Feb 2025). Users may also upload their own CSV files.
+An interactive football analytics dashboard built with Streamlit. Designed for coaches, analysts, and medical staff to monitor player performance, manage training load, assess injury risk, and analyse match events from a single interface.
 
 ---
 
-## 2. Installation & Running
+## Pages at a Glance
 
-### Option A — Local (Recommended for development)
+| Page | What it does |
+|---|---|
+| Dashboard | Season overview, squad fitness status, top scorers, result distribution |
+| Player Performance | Training load trends, technical match stats, wellness scores |
+| Player Comparison | Radar overlay, head-to-head stats, season form, percentile rankings |
+| Team Analytics | K-means role clustering, Z-score benchmarking, season trends |
+| Injury and Load Monitor | ACWR, PMC, monotony/strain, ML injury risk prediction |
+| Match Analysis | Shot map, xG timeline, press analysis (StatsBomb open data) |
+| Press Intelligence | PPDA windows, momentum index, substitution profiles (StatsBomb open data) |
+
+---
+
+## Setup and Installation
+
+### Requirements
+
+- Python 3.11 or later: https://www.python.org/downloads/
+- Internet connection (StatsBomb match data downloads on first use)
+
+Check your Python version:
+```
+python3 --version
+```
+
+---
+
+### Mac / Linux - Quickstart (two commands)
 
 ```bash
-# 1. Clone or unzip the project
-cd sports_analytics_tool
+bash install.sh
+bash run.sh
+```
 
-# 2. Install Python dependencies
+`install.sh` creates a virtual environment and installs all dependencies.
+`run.sh` starts the app. The browser opens automatically at http://localhost:8501
+
+---
+
+### Windows - Quickstart
+
+Open Command Prompt or PowerShell in the project folder, then run:
+
+```cmd
+python -m venv venv
+venv\Scripts\pip install -r requirements.txt
+venv\Scripts\streamlit run app.py
+```
+
+Then open http://localhost:8501 in your browser.
+
+---
+
+### Manual setup (alternative to install.sh)
+
+```bash
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# 3. Launch the app
 streamlit run app.py
 ```
 
-The dashboard opens automatically at `http://localhost:8501`.
+---
+
+## First-Run Notes
+
+**Dashboard, Player Performance, Player Comparison, Team Analytics, Injury Monitor**
+
+Load instantly. These pages use the bundled `players_data-2025_2026.csv` file (FBref 2025/26 Premier League data included in the repository).
+
+**Match Analysis and Press Intelligence**
+
+These pages use StatsBomb open event data (La Liga 2015/16), downloaded automatically from StatsBomb's public GitHub repository the first time each match is selected. No account or credentials are required.
+
+- The match list loads in a few seconds on first open.
+- Individual match events download the first time you select that match (2 to 5 seconds). After that they are cached locally and load instantly.
+- The **Substitution Profiles** tab processes all locally cached match files the first time it is opened. This can take 30 to 60 seconds on a fresh install. Subsequent loads are instant.
 
 ---
 
-### Option B — Docker
+## Stopping the App
 
+Press `Ctrl + C` in the terminal.
+
+---
+
+## Troubleshooting
+
+**"command not found: python3"**
+Install Python 3.11+ from https://www.python.org/downloads/ and ensure it is on your PATH.
+
+**"ModuleNotFoundError"**
+Run `bash install.sh` again to reinstall dependencies.
+
+**Port already in use**
 ```bash
-# Build and run with a single command
-docker compose up --build
+venv/bin/streamlit run app.py --server.port=8502
 ```
 
-Visit `http://localhost:8501`. No Python installation required.
+**Match Analysis or Press Intelligence show an error on first load**
+Check your internet connection. StatsBomb data is fetched from GitHub on first use.
 
-To run without Docker Compose:
-```bash
-docker build -t sports-analytics .
-docker run -p 8501:8501 sports-analytics
-```
+**Substitution Profiles tab is slow on first open**
+Expected behaviour on a fresh install. The app is processing event files for the first time. Wait 30 to 60 seconds. Every subsequent load is instant.
 
 ---
 
-### Option C — Hugging Face Spaces
+## Module Descriptions
 
-1. Create a new Space at [huggingface.co/spaces](https://huggingface.co/spaces).
-2. Choose **Streamlit** as the SDK.
-3. Upload all project files (maintain the directory structure).
-4. The space builds and deploys automatically.
+### Dashboard
+
+Season-level KPIs (points, win rate, goals, goal difference, average possession, average PPDA), a results timeline, top scorers bar chart, average training distance by position, and a result distribution donut chart. Includes the data source selector to toggle between bundled data and an uploaded CSV.
+
+### Player Performance
+
+Three tabs covering a full individual player profile:
+
+- **Physical** - total session distance trend with 7-day moving average, high-speed running and sprint stacked area chart, acceleration/deceleration counts, session load vs perceived exertion scatter.
+- **Technical** - match rating trend, per-match technical output, goals and assists bar chart, pass/dribble/tackle/aerial success rates.
+- **Wellness** - composite wellness score trend, individual sub-scores (sleep, fatigue, soreness, mood), correlation heatmap.
+
+### Player Comparison
+
+- Radar chart showing both players' percentile profiles against the full squad.
+- Head-to-head statistical table with all key per-match averages.
+- Season form comparison via rolling match rating.
+- Percentile rankings bar chart for side-by-side metric comparison.
+
+### Team Analytics
+
+- **Season Trends** - cumulative points, goals for and against by match.
+- **Player Clustering** - K-means clustering (configurable k = 3 to 7) on nine match performance features. PCA projection to 2D for visualisation. Cluster summary table.
+- **Z-Score Benchmarking** - configurable metric selection, colour-coded Z-score table and heatmap. Z = 0 is squad average; Z = +2 is exceptional.
+- **Top Performers** - ranked leaderboards across eight metric categories.
+
+### Injury and Load Monitor
+
+- **Squad Dashboard** - traffic-light risk overview (High Risk / Caution / Optimal / Under-training), per-player ACWR table, squad ACWR distribution histogram.
+- **ACWR and PMC** - Acute:Chronic Workload Ratio chart with configurable windows (acute 5 to 10 days, chronic 21 to 42 days). Performance Management Chart showing CTL (fitness), ATL (fatigue), and TSB (form). Training load calendar heatmap.
+- **Monotony and Strain** - Foster's training monotony (rolling mean / rolling std) and strain (mean x monotony) over the season. Average load by session type.
+- **ML Risk Prediction** - Random Forest classifier (150 trees) trained on synthetic injury data. Input features: ACWR, age, monotony, strain, days since rest, wellness composite, 7-day sRPE total. Output: injury probability per player.
+
+### Match Analysis
+
+Uses StatsBomb open event data (La Liga 2015/16).
+
+- **Shot Map** - full pitch with all shots plotted. Bubble size represents xG. Colour and symbol represent outcome (Goal, On Target, Blocked, Off Target). Home team attacks right; away team coordinates are flipped.
+- **xG Timeline** - cumulative expected goals for both teams, step-by-step through the match. Stars mark actual goals. Goal annotations show player and minute.
+- **Press Analysis** - spatial distribution of defensive actions (Pressures, Interceptions, Tackles, Ball Recoveries). Location map, press-by-pitch-third bar chart, territory depth by player.
+
+### Press Intelligence
+
+Uses StatsBomb open event data (La Liga 2015/16). Core methodology: pressure-based PPDA (Passes Allowed Per Defensive Action) computed in 10-minute windows.
+
+- **Press Timeline** - lollipop chart showing PPDA per window for both teams side by side. Goal and red card annotations. Direct/Defensive windows (where the opponent bypassed the press with long balls) are classified separately, and second-ball recovery rate is used as the alternative metric.
+- **Context Layer** - possession by period (area chart), pressing success rate (lollipop), defensive territory depth (area chart with zone bands), second-ball recovery by pitch third.
+- **Momentum Index** - composite 0 to 100 score combining PPDA performance (60% weight) and territory depth (40% weight). Clearly labelled as a heuristic.
+- **Substitution Profiles** - per-player pressing stats (pressures per match, regain rate, late pressures per match) aggregated from all locally cached matches. Radar chart comparison of two selected players.
+- **Opponent History** - season-long PPDA trend for the opponent as pressing team, across all cached matches. Coloured dots, trend line, and current match highlighted.
+- **Threshold Validator** - backtests the PPDA collapse threshold across all La Liga 2015/16 matches and reports the distribution of window categories (Build-up, Mixed, Direct/Defensive).
 
 ---
 
-### Option D — Google Colab
+## Analytical Methods
 
-Open `SportAnalytics_Colab.ipynb` in Google Colab and run all cells. The notebook installs dependencies and creates a public tunnel via `pyngrok`.
-
----
-
-## 3. Data Dictionary
-
-### Training Session Data
-
-| Column | Type | Description |
+| Method | Used in | Reference |
 |---|---|---|
-| `player_id` | int | Unique player identifier |
-| `player_name` | str | Full player name |
-| `position` | str | Playing position (GK, CB, LB, RB, CDM, CM, CAM, LW, RW, ST) |
-| `date` | date | Session date |
-| `session_type` | str | MD (match day), MD+1, MD-1, MD-2, MD-3, GYM |
-| `duration_min` | int | Session length in minutes |
-| `distance_m` | int | Total GPS distance (metres) |
-| `hi_distance_m` | int | High-intensity distance >14.4 km/h (metres) |
-| `sprint_count` | int | Number of sprints >25.2 km/h |
-| `max_speed_kmh` | float | Maximum speed recorded (km/h) |
-| `player_load` | float | Composite physical stress metric (AU) |
-| `rpe` | float | Rate of Perceived Exertion (1–10, Borg CR10) |
-| `session_rpe` | float | Foster's sRPE = RPE × duration |
-
-### Match Player Data
-
-| Column | Type | Description |
-|---|---|---|
-| `match_id` | int | Unique match identifier |
-| `minutes_played` | int | Time on pitch |
-| `distance_m` | int | In-match GPS distance |
-| `passes` | int | Total pass attempts |
-| `pass_completion` | float | Pass success rate (0–1) |
-| `shots` | int | Total shots attempted |
-| `goals` | int | Goals scored |
-| `assists` | int | Goal assists |
-| `tackles` | int | Successful tackles |
-| `interceptions` | int | Interceptions made |
-| `aerial_duels` | int | Aerial duels attempted |
-| `dribbles` | int | Successful dribbles |
-| `key_passes` | int | Passes leading to shot |
-| `match_rating` | float | Overall match rating (5.0–9.5) |
-
----
-
-## 4. Module Descriptions
-
-### 4.1 Home (app.py)
-
-Entry point showing season-level KPIs (points, goals, squad size, training sessions), a results timeline, top scorers, and average distance by position. Includes the data source selector — toggle between sample data and uploaded CSV.
-
-### 4.2 📊 Player Performance
-
-**Purpose:** Detailed individual player monitoring.
-
-**Physical Metrics tab:**
-- Session distance trend with 7-day moving average
-- High-intensity distance fill chart
-- Max speed distribution histogram
-- Player Load vs RPE scatter (bubble size = sprint count)
-
-**Technical Stats tab:**
-- Match rating trend with user-configurable rolling average
-- Per-match technical output bar chart
-- Goals & assists stacked bar by match
-
-**Performance Profile tab:**
-- Spider/radar chart of 10 attributes mapped to squad percentiles
-- Percentile comparison table
-
-**Percentile Ranking tab:**
-- Horizontal bar chart colour-coded: green (top third), yellow (middle), red (bottom)
-
-### 4.3 🏆 Team Analytics
-
-**Purpose:** Squad-level performance analysis and player role identification.
-
-**Season Performance tab:**
-- Cumulative points, goals for/against over the season
-- Possession vs goals scatter
-- Home/Away result comparison
-
-**Player Clustering tab:**
-- **K-means clustering** (configurable k = 3–7) on 9 match-performance features
-- 2D PCA projection (Principal Component Analysis) to visualise clusters
-- Hover shows individual player metrics
-- Cluster summary table with average stats per group
-
-**Squad Z-Scores tab:**
-- Configurable metric selection
-- Colour-coded Z-score table (green = above average, red = below)
-- Full-squad Z-score heatmap
-
-**Top Performers tab:**
-- Selectable ranking metric across 8 categories
-
-### 4.4 ⚕️ Injury Risk Monitor
-
-**Purpose:** Early warning system for overtraining and injury risk.
-
-**Squad Dashboard tab:**
-- Traffic light overview (High Risk / Caution / Optimal / Under-training)
-- Per-player ACWR and load metrics in styled table
-- ACWR distribution histogram for the full squad
-
-**ACWR Deep Dive tab:**
-- **Acute:Chronic Workload Ratio** (Gabbett, 2016) plotted over the season
-  - Acute window: configurable 5–10 days (default 7)
-  - Chronic window: configurable 21–42 days (default 28)
-  - Risk zones shaded on chart (0.8–1.3 = optimal; >1.5 = high risk)
-- Training load calendar heatmap (week × day of week)
-
-**Monotony & Strain tab:**
-- **Foster's Training Monotony** = weekly mean sRPE / std sRPE
-- **Strain** = mean sRPE × monotony
-- Session type average load bar chart
-
-**ML Risk Prediction tab:**
-- **Random Forest classifier** (100 trees, scikit-learn) trained on synthetic injury data
-- Input features: ACWR, age, monotony, strain, days since last rest
-- Output: injury risk probability (0–100%)
-- Gauge chart for selected player
-- Full squad risk bar chart (colour-coded)
-- Feature importance chart
-
-### 4.5 ⚽ Match Analysis
-
-**Purpose:** Post-match breakdown with shot maps and performance metrics.
-
-**Shot Map tab:**
-- Full-pitch SVG-style visualisation using Plotly shapes
-- Shots plotted at true (x, y) pitch coordinates
-- Size = xG value; colour = outcome (Goal / On Target / Off Target)
-- Filter by player position
-
-**xG Timeline tab:**
-- **Expected Goals model**: logistic function of shot distance and angle to goal
-  - Formula: `xG = 1 / (1 + exp(0.2 + 0.06·d − 2.5·|θ|))`
-  - where d = distance to goal (m), θ = angle to goal (radians)
-- Cumulative xG step chart with goal annotations
-- Per-player xG breakdown table
-
-**Player Ratings tab:**
-- Colour-coded bar chart of all match participants
-- Physical output table (distance, HI distance, sprints, max speed)
-
-**Match Stats tab:**
-- Full team-level match statistics
-- Distance-by-position pie chart
-
-### 4.6 🔄 Player Comparison
-
-**Purpose:** Side-by-side comparison of 2–4 players.
-
-**Radar Overlay tab:**
-- Multi-player radar chart showing percentile profiles on shared axes
-- Each player colour-coded; semi-transparent fill for easy comparison
-
-**Head-to-Head Stats tab:**
-- Transposed statistics table covering all key metrics
-- Grouped bar chart across 7 key performance indicators
-
-**Season Trends tab:**
-- Rolling-average trend lines for any metric, all selected players on one chart
-- Percentile rank bars vs full squad for 8 metrics
-
----
-
-## 5. Analytical Methods
-
-| Method | Module | Reference |
-|---|---|---|
-| Acute:Chronic Workload Ratio (ACWR) | Injury Risk | Gabbett (2016), *Br J Sports Med* |
-| Training Monotony & Strain | Injury Risk | Foster (1998), *J Strength Cond Res* |
+| ACWR - Acute:Chronic Workload Ratio | Injury Monitor | Gabbett (2016), Br J Sports Med |
+| Training Monotony and Strain | Injury Monitor | Foster (1998), J Strength Cond Res |
+| Performance Management Chart (CTL/ATL/TSB) | Injury Monitor | Banister (1991) |
+| Random Forest Classification | Injury Monitor | Breiman (2001) |
 | K-means Clustering | Team Analytics | MacQueen (1967) |
-| Principal Component Analysis (PCA) | Team Analytics | Pearson (1901) |
-| Random Forest Classification | Injury Risk | Breiman (2001) |
-| Z-score Normalisation | Comparison | Standard Statistics |
-| Percentile Ranking (scipy) | Performance | |
-| Expected Goals (xG) Model | Match Analysis | Rathke (2017) |
+| Principal Component Analysis | Team Analytics | Pearson (1901) |
+| Z-score Normalisation | Team Analytics, Comparison | Standard statistics |
+| Percentile Ranking | Performance, Comparison | scipy.stats |
+| Expected Goals model (xG) | Match Analysis | Rathke (2017) |
 | Session RPE (sRPE) | Load Monitoring | Foster et al. (2001) |
+| Pressure-based PPDA | Press Intelligence | Trainor (2014), StatsBomb |
+| Build-up Tendency Classifier | Press Intelligence | Original extension |
+| Match Momentum Index | Press Intelligence | Original heuristic |
 
 ---
 
-## 6. Uploading Custom Data
+## Data Sources
 
-Navigate to the **Home** page sidebar and select **Upload CSV**. Upload a CSV matching the training session schema above. The app will use this data wherever training metrics are displayed. Match data currently uses the built-in synthetic dataset.
-
----
-
-## 7. Configurable Settings (Sidebar)
-
-| Page | Setting | Effect |
+| Data | Source | Coverage |
 |---|---|---|
-| Player Performance | Player selector | Changes all charts to the chosen player |
-| Player Performance | Date range | Filters training sessions |
-| Player Performance | Rolling window | Smoothing for trend charts |
-| Team Analytics | n_clusters | K-means number of groups |
-| Team Analytics | Metrics | Z-score table columns |
-| Injury Risk | Player selector | Individual ACWR/monotony charts |
-| Injury Risk | Acute/chronic window | ACWR calculation periods |
-| Match Analysis | Match selector | Switches all charts to chosen fixture |
-| Match Analysis | Position filter | Filters shot map by position |
-| Player Comparison | Player list | 2–4 players to compare (max 4) |
+| Player stats (Dashboard, Performance, Comparison, Team, Injury) | FBref 2025/26 Premier League CSV (bundled) | Full squad, season totals disaggregated to per-match |
+| Match events (Match Analysis, Press Intelligence) | StatsBomb open data via statsbombpy | La Liga 2015/16, 380 matches |
 
 ---
 
-## 8. Limitations
+## Key Design Decisions
 
-- The tool uses **synthetic data** modelled on realistic professional football metrics. It is not connected to real GPS hardware or match data APIs.
-- The xG model is a simplified logistic regression on shot location; it does not account for game state, goalkeeper position, or body part.
-- The Random Forest injury model is trained on synthetic data; in a real deployment it should be trained and validated on historical injury records.
+**Why La Liga 2015/16?**
+It is StatsBomb's flagship open dataset: 380 matches with complete pressure event records, which are required for PPDA computation. Larger than FIFA World Cup (64 matches), making the threshold validator and opponent history statistically meaningful.
+
+**Synthetic player data**
+The player performance, injury, and comparison pages use per-match records disaggregated from real 2025/26 FBref season totals, with position-specific physical profiles filling in GPS metrics not available from FBref. This gives realistic distributions while remaining on open data.
+
+**PPDA threshold**
+The default threshold of 10.0 is validated via backtest across all 380 La Liga 2015/16 matches (see Threshold Validator tab). It is configurable via sidebar slider.
 
 ---
 
-## 9. Group Member Contribution Statement
+## Limitations
 
-| Member | Contribution |
+- Player performance pages use synthetic per-match records derived from real season totals. They represent plausible distributions, not actual match-by-match data.
+- The xG model uses shot location only. It does not account for game state, goalkeeper position, or body part.
+- The ML injury risk model is trained on synthetic data. In a real deployment it would require historical injury records for training and validation.
+- Match Analysis and Press Intelligence are post-match only. StatsBomb open data does not include a live feed.
+- Substitution pressing profiles are built from locally cached matches only. The more matches are loaded, the more reliable the profiles.
+
+---
+
+## Group Contribution Statement
+
+| Member | Primary Contribution |
 |---|---|
-| Member 1 | Data generation module, training load analytics |
-| Member 2 | Injury risk module (ACWR, ML model) |
-| Member 3 | Match analysis module (shot map, xG) |
-| Member 4 | Team analytics module (clustering, PCA) |
-| Member 5 | Player performance module, deployment (Docker/HF) |
+| Member 1 | Data generation module, training load analytics, FBref integration |
+| Member 2 | Injury risk module (ACWR, PMC, ML model) |
+| Member 3 | Match Analysis (shot map, xG timeline, press analysis) |
+| Member 4 | Team Analytics (K-means clustering, Z-scores, season trends) |
+| Member 5 | Press Intelligence module, UI design, deployment |
 
-> *All members contributed equally to the conceptual design, documentation, and final testing.*
+All members contributed to conceptual design, documentation, and final testing.

@@ -79,9 +79,20 @@ def _cached_validator() -> dict:
     return run_threshold_validator()
 
 
-@st.cache_data(show_spinner="Building pressing profiles from cached matches…")
+_PROFILES_DISK_CACHE = os.path.join(CACHE_DIR, "pressing_profiles.csv")
+
+
+@st.cache_data(show_spinner="Loading pressing profiles...")
 def _build_pressing_profiles() -> pd.DataFrame:
-    """Aggregate per-player pressing stats from all locally cached event files."""
+    """
+    Aggregate per-player pressing stats from all locally cached event files.
+    Results are persisted to disk so computation only runs once ever,
+    not once per Streamlit session.
+    """
+    # Serve from disk cache if it exists - instant load
+    if os.path.exists(_PROFILES_DISK_CACHE):
+        return pd.read_csv(_PROFILES_DISK_CACHE)
+
     cached_ids = []
     for f in os.listdir(CACHE_DIR):
         if f.startswith("events_") and f.endswith(".csv"):
@@ -110,21 +121,18 @@ def _build_pressing_profiles() -> pd.DataFrame:
             rev = ev[ev["type_name"].isin(regain_types)].copy()
             rev["t_s"] = rev["minute"] * 60 + rev["second"].fillna(0)
 
-            team_rt: dict[str, list[float]] = defaultdict(list)
-            for _, r in rev.iterrows():
-                team_rt[str(r["team_name"])].append(float(r["t_s"]))
-            for k in team_rt:
-                team_rt[k].sort()
-
-            regains = np.zeros(len(pev), dtype=bool)
-            for i, (_, row) in enumerate(pev.iterrows()):
-                t0    = float(row["t_s"])
-                times = team_rt.get(str(row["team_name"]), [])
-                if times:
-                    lo = bisect_left(times, t0)
-                    hi = bisect_right(times, t0 + 5.0)
-                    regains[i] = lo < hi
-            pev["is_regain"] = regains
+            # Vectorized regain check: numpy broadcasting per team
+            pev["is_regain"] = False
+            for team in pev["team_name"].unique():
+                tm   = pev["team_name"] == team
+                rtms = rev.loc[rev["team_name"] == team, "t_s"].values
+                if len(rtms) == 0:
+                    continue
+                pt = pev.loc[tm, "t_s"].values
+                # Each press time vs all regain times: any regain within 5s?
+                hit = ((rtms[np.newaxis, :] >= pt[:, np.newaxis]) &
+                       (rtms[np.newaxis, :] <= pt[:, np.newaxis] + 5.0)).any(axis=1)
+                pev.loc[tm, "is_regain"] = hit
 
             for (player, team), grp in pev.groupby(["player", "team_name"]):
                 player = str(player)
@@ -159,7 +167,11 @@ def _build_pressing_profiles() -> pd.DataFrame:
     agg["press_per_match"] = (agg["total_press"]   / agg["matches"]).round(1)
     agg["regain_rate"]     = (agg["total_regains"]  / agg["total_press"].clip(lower=1)).round(3)
     agg["late_per_match"]  = (agg["total_late"]     / agg["matches"]).round(1)
-    return agg.sort_values("press_per_match", ascending=False).reset_index(drop=True)
+    result = agg.sort_values("press_per_match", ascending=False).reset_index(drop=True)
+
+    # Persist to disk so future sessions skip computation entirely
+    result.to_csv(_PROFILES_DISK_CACHE, index=False)
+    return result
 
 
 @st.cache_data(show_spinner="Loading opponent press history…")
