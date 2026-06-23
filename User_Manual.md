@@ -1,7 +1,6 @@
 # Sports Analytics Tool — User Manual
 
-**Module:** MIS41500 Sports and Performance Analytics  
-**Assessment Component:** Group Assessment (40%)  
+**Module:** MIS41500 Sports and Performance Analytics   
 **Sport:** Football (Soccer)  
 **Team:** FC Analytics United  
 
