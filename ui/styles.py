@@ -37,6 +37,10 @@ label        {{ color:{COLORS['muted']} !important; font-size:0.8rem; }}
 /* ── Divider ─────────────────────────────────────────────────── */
 hr {{ border-color: {COLORS['border']}; margin: 1.4rem 0; }}
 
+/* ── KPI row ────────────────────────────────────────────────── */
+.kpi-row {{ display:flex; gap:1rem; align-items:stretch; margin-bottom:1rem; }}
+.kpi-row .kpi-card {{ flex:1; }}
+
 /* ── KPI card ────────────────────────────────────────────────── */
 .kpi-card {{
     background: {COLORS['surface']};
@@ -46,6 +50,10 @@ hr {{ border-color: {COLORS['border']}; margin: 1.4rem 0; }}
     position: relative;
     overflow: hidden;
     transition: border-color 0.2s;
+    min-height: 130px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
 }}
 .kpi-card::before {{
     content: "";

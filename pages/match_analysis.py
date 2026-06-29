@@ -294,14 +294,15 @@ st.divider()
 # ── Top KPIs ─────────────────────────────────────────────────────────────────
 _h = home_team[:14]
 _a = away_team[:14]
+_pass_h = 100 - poss_h if our_team == home_team else poss_h
+# sub=f"{_h} / {100-poss_h:.0f}% {_a}"
 kpi_row([
-    kpi_card(f"{_h} xG",    f"{home_xg:.2f}",  sub=f"{home_score} goal(s)",    accent=COLORS["primary"]),
-    kpi_card(f"{_a} xG",    f"{away_xg:.2f}",  sub=f"{away_score} goal(s)",    accent=COLORS["secondary"]),
-    kpi_card(f"{_h} shots", len(home_shots),                                    accent=COLORS["warning"]),
-    kpi_card(f"{_a} shots", len(away_shots),                                    accent=COLORS["warning"]),
-    kpi_card("Possession",  f"{poss_h:.0f}%",  sub=f"{_h} / {100-poss_h:.0f}% {_a}",
-             accent=COLORS["primary"]),
-    kpi_card("Press events", len(press_ev),    sub=f"{our_team[:14]}",         accent=COLORS["success"]),
+    kpi_card("Home xG",    f"{home_xg:.2f}",  sub=f"{home_score} goal(s)",    accent=COLORS["primary"]),
+    kpi_card("Away xG",    f"{away_xg:.2f}",  sub=f"{away_score} goal(s)",    accent=COLORS["warning"]),
+    kpi_card("Home shots", len(home_shots),   sub=f" shot(s)",                accent=COLORS["primary"]),
+    kpi_card("Away shots", len(away_shots),   sub=f" shot(s)",                accent=COLORS["warning"]),
+    kpi_card("Possession", f"{_pass_h:.0f}%", sub=f" {our_team}",             accent=COLORS["secondary"]),
+    kpi_card("Press events", len(press_ev),    sub=f"{our_team[:14]}",        accent=COLORS["secondary"]),
 ])
 with st.columns([18, 1])[1]:
     info_popover(

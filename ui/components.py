@@ -26,7 +26,7 @@ def kpi_card(
     sub_html = f'<div class="kpi-sub">{sub}</div>' if sub else ""
 
     return (
-        f'<div class="kpi-card" style="--accent:{accent};">'
+        f'<div class="kpi-card" style="--accent:{accent};flex:1;">'
         f'  <div class="kpi-label">{label}</div>'
         f'  <div class="kpi-value">{value}</div>'
         f'  {delta_html}{sub_html}'
@@ -35,10 +35,11 @@ def kpi_card(
 
 
 def kpi_row(cards: list[str]) -> None:
-    """Render a list of kpi_card() strings evenly across columns."""
-    cols = st.columns(len(cards))
-    for col, html in zip(cols, cards):
-        col.markdown(html, unsafe_allow_html=True)
+    """Render all cards in one flex container so they share height."""
+    st.markdown(
+        f'<div style="display:flex;gap:1rem;align-items:stretch;margin-bottom:1rem;">{"".join(cards)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ── Section header ────────────────────────────────────────────────────────────
