@@ -1,4 +1,4 @@
-"""Entry point — configures the page and wires up multi-page navigation."""
+"""Entry point - configures the page and wires up multi-page navigation."""
 
 import streamlit as st
 

@@ -57,7 +57,7 @@ def scale_coords(x_sb: float, y_sb: float) -> tuple[float, float]:
     return x_sb * (OUR_PITCH_LEN / SB_PITCH_LEN), y_sb * (OUR_PITCH_WID / SB_PITCH_WID)
 
 
-# ── Our v1 model (original — distance + angle only) ───────────────────────────
+# ── Our v1 model (original - distance + angle only) ───────────────────────────
 def xg_v1(x: float, y: float) -> float:
     """Original model: distance and angle, no body-part adjustment."""
     gx, gy = OUR_PITCH_LEN, OUR_PITCH_WID / 2

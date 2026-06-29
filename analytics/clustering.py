@@ -4,13 +4,13 @@ K-means caveats
 ---------------
 K-means assumes roughly spherical, equal-sized clusters (minimises
 within-cluster sum of squared Euclidean distances).  Football player profiles
-typically violate this assumption — a goalkeeper and a striker have very
+typically violate this assumption - a goalkeeper and a striker have very
 different feature distributions with no meaningful centroid between them.
 
 This module now provides:
-  cluster_evaluation()  — silhouette scores + inertia for k=2–8
-  cluster_stability()   — Jaccard stability across 10 random seeds
-  cluster_players()     — original clustering with PCA projection
+  cluster_evaluation()  - silhouette scores + inertia for k=2–8
+  cluster_stability()   - Jaccard stability across 10 random seeds
+  cluster_players()     - original clustering with PCA projection
 
 Users should examine the elbow plot and silhouette scores before trusting
 any particular k.  If silhouette < 0.25, the cluster structure is weak.
@@ -103,13 +103,13 @@ def cluster_stability(
     using pairwise Jaccard similarity of co-membership matrices.
 
     Returns:
-      mean_jaccard  — average pairwise Jaccard (1.0 = perfectly stable)
-      std_jaccard   — standard deviation across seed pairs
-      interpretation — string label
+      mean_jaccard  - average pairwise Jaccard (1.0 = perfectly stable)
+      std_jaccard   - standard deviation across seed pairs
+      interpretation - string label
 
     Jaccard > 0.80: stable
     Jaccard 0.60–0.80: moderately stable
-    Jaccard < 0.60: unstable — don't trust the cluster labels
+    Jaccard < 0.60: unstable - don't trust the cluster labels
     """
     _, X_scaled, _ = _aggregate_features(match_players)
     n = len(X_scaled)
@@ -136,9 +136,9 @@ def cluster_stability(
     mean_j = float(np.mean(jaccards))
     std_j  = float(np.std(jaccards))
 
-    if   mean_j >= 0.80: interp = "Stable — cluster labels are reliable"
-    elif mean_j >= 0.60: interp = "Moderately stable — interpret with care"
-    else:                interp = "Unstable — k-means solution is seed-dependent"
+    if   mean_j >= 0.80: interp = "Stable - cluster labels are reliable"
+    elif mean_j >= 0.60: interp = "Moderately stable - interpret with care"
+    else:                interp = "Unstable - k-means solution is seed-dependent"
 
     return {"mean_jaccard": round(mean_j, 3),
             "std_jaccard":  round(std_j, 3),

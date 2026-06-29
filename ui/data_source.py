@@ -64,7 +64,7 @@ def render_data_source_selector() -> None:
         st.markdown("---")
         return
 
-    # Do NOT pass index= here — session_state["squad_filter"] is already set
+    # Do NOT pass index= here - session_state["squad_filter"] is already set
     # in app.py before any page runs, so Streamlit uses that value directly.
     # Passing index= alongside a pre-set session_state key triggers a warning.
     st.selectbox(
@@ -92,7 +92,7 @@ def get_data() -> tuple:
     if not squad:
         # Should not happen because app.py initialises squad_filter, but
         # guard defensively.
-        st.warning("No team selected — showing demo data.", icon="⚠️")
+        st.warning("No team selected - showing demo data.", icon="⚠️")
         from data.generator import load_data
         return load_data()
 

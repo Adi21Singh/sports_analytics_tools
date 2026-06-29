@@ -1,4 +1,4 @@
-"""Team Analytics — clustering, PCA, Z-scores, top performers, season trends."""
+"""Team Analytics - clustering, PCA, Z-scores, top performers, season trends."""
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 
 import ui.styles as styles
-from ui.components import kpi_card, kpi_row, section_header, style_chart, info_box
+from ui.components import kpi_card, kpi_row, section_header, style_chart, info_box, info_popover
 from ui.data_source import render_data_source_selector, get_data
 from analytics.performance import compute_derived_kpis, z_score_table, percentile_rank
 from analytics.clustering import cluster_players, CLUSTER_FEATURES
@@ -44,7 +44,15 @@ losses= int((matches["result"] == "Loss").sum())
 gf    = int(matches["goals_for"].sum())
 ga    = int(matches["goals_against"].sum())
 
-section_header("Season Snapshot", icon="📋")
+section_header("Season Snapshot", icon="📋",
+               help_text=(
+                   "High-level team performance metrics for the current season.<br><br>"
+                   "<b>Win Rate</b> - % of matches won.<br>"
+                   "<b>Goal Difference</b> - total goals scored minus conceded. A positive GD is a reliable indicator of league position.<br>"
+                   "<b>Avg Possession</b> - mean ball possession % across all matches.<br>"
+                   "<b>Avg PPDA</b> - Passes Allowed Per Defensive Action. "
+                   "Below 10 = high pressing team. Above 10 = more passive/mid-block approach."
+               ))
 kpi_row([
     kpi_card("Win Rate",        f"{wins/len(matches)*100:.0f}%",       accent=COLORS["success"]),
     kpi_card("Goals Scored",    gf,                                     accent=COLORS["primary"]),
@@ -68,7 +76,13 @@ with tab1:
     df_m["cum_gf"]   = df_m["goals_for"].cumsum()
     df_m["cum_ga"]   = df_m["goals_against"].cumsum()
 
-    section_header("Cumulative Season Performance", icon="📈")
+    section_header("Cumulative Season Performance", icon="📈",
+                   help_text=(
+                       "Tracks how cumulative points, goals scored and goals conceded have accumulated match by match.<br><br>"
+                       "A steep points curve = good run of form. A flattening curve = poor results. "
+                       "When the goals conceded line rises sharply while goals scored stays flat, "
+                       "the team is defending poorly but not converting either - a structural problem."
+                   ))
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df_m["match_no"], y=df_m["cum_pts"],
                              mode="lines+markers", name="Points",
@@ -107,7 +121,17 @@ with tab1:
 # CLUSTERING
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab2:
-    section_header("K-Means Player Role Clustering", icon="🔬")
+    section_header("K-Means Player Role Clustering", icon="🔬",
+                   help_text=(
+                       "Unsupervised machine learning groups players into clusters based on their statistical profiles - "
+                       "without being told positions in advance.<br><br>"
+                       "Players in the same cluster have similar playing patterns. "
+                       "Clusters often map onto recognisable roles (high-press forwards, deep-lying playmakers, defensive midfielders etc.) "
+                       "but discovered from the data, not assumed from squad sheets.<br><br>"
+                       "<b>How to use it:</b> if two very different players land in the same cluster, they may be more interchangeable than assumed. "
+                       "If a player is isolated in their own cluster, they have a unique profile in the squad - they may be hard to replace.<br><br>"
+                       "Use the sidebar slider to change K (number of clusters). Higher K = finer role distinctions."
+                   ))
     info_box(
         f"Players grouped into <b>{n_clusters}</b> archetypes using K-means on "
         "match-averaged performance features, projected to 2D via PCA. "
@@ -127,7 +151,7 @@ with tab2:
         hover_data=["player_name", "position"] + CLUSTER_FEATURES[:4],
         color_discrete_sequence=PALETTE,
         labels={"pca_x": "PCA Dimension 1", "pca_y": "PCA Dimension 2"},
-        title="Player Role Map — PCA of Match Performance",
+        title="Player Role Map - PCA of Match Performance",
     )
     fig = style_chart(fig, height=480)
     fig.update_traces(marker=dict(sizemin=6, line=dict(width=0.5, color=COLORS["border"])))
@@ -142,7 +166,16 @@ with tab2:
 # Z-SCORES
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab3:
-    section_header("Squad Z-Score Benchmarking", icon="📊")
+    section_header("Squad Z-Score Benchmarking", icon="📊",
+                   help_text=(
+                       "Z-scores measure how many standard deviations a player is above or below the squad average for each metric.<br><br>"
+                       "<b>Z = 0</b> = exactly squad average.<br>"
+                       "<b>Z = +2</b> = exceptional (top ~2% of the squad).<br>"
+                       "<b>Z = -2</b> = well below average for the group.<br><br>"
+                       "This is useful for spotting outliers - either exceptional performers worth building around "
+                       "or underperformers in specific metrics who may need coaching focus or positional adjustment.<br><br>"
+                       "Select which metrics to include using the sidebar multiselect."
+                   ))
     info_box(
         "<b>Z-score</b> = (player value − squad mean) / squad std. "
         "<b>+1.0</b> = one standard deviation above squad average. "
@@ -185,7 +218,13 @@ with tab3:
 # TOP PERFORMERS
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab4:
-    section_header("Top Performers", icon="🏅")
+    section_header("Top Performers", icon="🏅",
+                   help_text=(
+                       "Ranked lists of the squad's best performers for each key metric this season.<br><br>"
+                       "These are raw totals or averages, not adjusted for playing time. "
+                       "A player who has played 10 matches will naturally have higher totals than one with 4 appearances. "
+                       "For fair comparison, use the Player Comparison page which normalises metrics to per-90-minute rates."
+                   ))
     metric_opts = {
         "Goals (total)":           ("goals",        "sum"),
         "Assists (total)":         ("assists",       "sum"),
@@ -218,5 +257,5 @@ with tab4:
     fig = style_chart(fig, height=420,
                       xaxis=dict(title=chosen, gridcolor=COLORS["grid"]),
                       yaxis=dict(autorange="reversed", gridcolor=COLORS["grid"]))
-    fig.update_layout(title=f"Top 12 — {chosen}")
+    fig.update_layout(title=f"Top 12 - {chosen}")
     st.plotly_chart(fig, width="stretch")

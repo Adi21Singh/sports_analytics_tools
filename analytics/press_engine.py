@@ -7,11 +7,11 @@ Computes PPDA (Passes Permitted per Defensive Action) in tumbling 10-minute
 windows using StatsBomb La Liga 2015/16 event data, with an Opponent Build-up
 Tendency classifier that flags windows where PPDA is not a reliable signal.
 
-Why this module exists — the false-positive PPDA problem
+Why this module exists - the false-positive PPDA problem
 ---------------------------------------------------------
 PPDA's numerator counts only opponent passes attempted in their own defensive
-zone.  When an opponent plays direct football — clearing long, going aerial,
-not building through that zone — their pass count there is near zero, producing
+zone.  When an opponent plays direct football - clearing long, going aerial,
+not building through that zone - their pass count there is near zero, producing
 artificially low PPDA even when our press had no meaningful effect.  The
 Build-up Tendency Classifier identifies such windows so the UI can surface
 second-ball recovery rate as the headline metric instead of a misleading colour.
@@ -20,11 +20,17 @@ second-ball recovery rate as the headline metric instead of a misleading colour.
 from __future__ import annotations
 import os
 import json
+import logging
 import numpy as np
 import pandas as pd
 
 try:
-    from statsbombpy import sb as _sb
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        from statsbombpy import sb as _sb
+    warnings.filterwarnings("ignore", module="statsbombpy")
+    logging.getLogger("statsbombpy").setLevel(logging.ERROR)
     SB_AVAILABLE = True
 except ImportError:
     SB_AVAILABLE = False
@@ -37,7 +43,7 @@ LA_LIGA_SEASON_NAME     = "2015/2016"
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "sb_press_cache")
 
-# ── PPDA configuration — DO NOT CHANGE (validated against 380 matches) ────────
+# ── PPDA configuration - DO NOT CHANGE (validated against 380 matches) ────────
 # Defensive zone: the possessing team's lower 60 % of the pitch.
 # 60 % × 120 m = 72 m.  Below this x-threshold (normalised to team perspective)
 # the opponent is "building out" and PPDA is meaningful.
@@ -50,7 +56,7 @@ WINDOW_MINUTES = 10
 # to be considered data-sufficient.  Below this the window is greyed out.
 MIN_EVENTS_GREY_OUT = 5
 
-# PPDA collapse threshold — backtested across all La Liga 2015/16 windows:
+# PPDA collapse threshold - backtested across all La Liga 2015/16 windows:
 # PPDA ≤ threshold → teal (good press); PPDA > threshold → amber (collapsing).
 PPDA_COLLAPSE_THRESHOLD = 10.0
 
@@ -79,7 +85,7 @@ DIRECT_LONG_PASS_RATIO_THRESHOLD = 0.35
 MIXED_LONG_PASS_RATIO_LOWER = 0.20
 
 # StatsBomb pass_length is in metres; above this we consider a pass "long".
-# 32 m ≈ 35 yards — roughly from the back third to the halfway line.
+# 32 m ≈ 35 yards - roughly from the back third to the halfway line.
 LONG_PASS_LENGTH_METRES = 32.0
 
 # ── Second-ball recovery ──────────────────────────────────────────────────────
@@ -344,7 +350,7 @@ def _second_ball_recovery(
         if not window_recov.empty:
             found += 1
             rx = float(window_recov.iloc[0]["x"])
-            # Thirds measured in absolute x — assumes our team attacks right (x→120)
+            # Thirds measured in absolute x - assumes our team attacks right (x→120)
             # Inversion is acceptable at this granularity; label is informational.
             if rx < 40:
                 thirds["Defensive"] += 1
@@ -397,11 +403,11 @@ def _window_momentum(
 
     Components:
       - PPDA score: 100 when PPDA → 0 (perfect), 50 at threshold, 0 at 2× threshold.
-      - Territory score: (territory_depth / 120) × 100 — higher x press = higher score.
+      - Territory score: (territory_depth / 120) × 100 - higher x press = higher score.
 
     For Direct/Defensive windows the PPDA component weight is multiplied by
     DIRECT_PPDA_WEIGHT_FACTOR (default 0.10).  This prevents a near-zero PPDA
-    caused by the opponent barely passing in the zone — not by our press — from
+    caused by the opponent barely passing in the zone - not by our press - from
     inflating the momentum score.  Weights are renormalised so the index stays
     on the same 0–100 scale.
     """
@@ -617,7 +623,7 @@ def run_threshold_validator(
             continue
 
     if not all_windows:
-        return {"error": "No windows computed — check StatsBomb cache."}
+        return {"error": "No windows computed - check StatsBomb cache."}
 
     all_df = pd.concat(all_windows, ignore_index=True)
     valid  = all_df[all_df["sufficient_data"]].copy()

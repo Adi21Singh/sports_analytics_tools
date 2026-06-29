@@ -1,4 +1,4 @@
-"""Player Comparison — radar overlay, head-to-head stats, season trends."""
+"""Player Comparison - radar overlay, head-to-head stats, season trends."""
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 
 import ui.styles as styles
-from ui.components import kpi_card, section_header, style_chart, info_box, empty_state
+from ui.components import kpi_card, section_header, style_chart, info_box, empty_state, info_popover
 from ui.data_source import render_data_source_selector, get_data
 from analytics.performance import (
     build_radar_profile, compute_derived_kpis,
@@ -20,7 +20,7 @@ from config import COLORS, PALETTE
 
 styles.apply()
 
-# ── Sidebar phase 1 — data source ────────────────────────────────────────────
+# ── Sidebar phase 1 - data source ────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 🔄 Player Comparison")
     render_data_source_selector()
@@ -28,7 +28,7 @@ with st.sidebar:
 players, training, wellness, matches, match_players, events = get_data()
 match_players = compute_derived_kpis(match_players)
 
-# ── Sidebar phase 2 — player selector ────────────────────────────────────────
+# ── Sidebar phase 2 - player selector ────────────────────────────────────────
 with st.sidebar:
     all_names = sorted(players["name"].tolist())
     selected  = st.multiselect("Select Players (2–4)", all_names,
@@ -52,7 +52,13 @@ COMP_COLORS = PALETTE[:4]
 # RADAR OVERLAY
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    section_header("Performance Profile — Percentile vs Squad", icon="🕸")
+    section_header("Performance Profile - Percentile vs Squad", icon="🕸",
+                   help_text=(
+                       "Radar chart showing each player's percentile ranking (0-100) across key metrics relative to the full squad.<br><br>"
+                       "A score of 100 means the player is the best in the squad for that metric. "
+                       "50 means they are exactly average. The larger and more balanced the shape, the more complete the player.<br><br>"
+                       "Use this to identify strengths to build tactics around and weaknesses that may need covering with a different role or partner."
+                   ))
     info_box("Each axis shows each player's percentile rank within the full squad (0 = lowest · 100 = highest).")
 
     labels = list(RADAR_METRICS.values())
@@ -91,7 +97,12 @@ with tab1:
 # HEAD-TO-HEAD
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab2:
-    section_header("Head-to-Head Statistical Comparison", icon="📊")
+    section_header("Head-to-Head Statistical Comparison", icon="📊",
+                   help_text=(
+                       "Side-by-side table of raw per-match averages for both players across all technical and physical metrics.<br><br>"
+                       "Each row is one metric. The higher value is highlighted. "
+                       "This view is useful for explaining why the radar shapes look the way they do - the radar compresses everything to percentile, this shows the actual numbers."
+                   ))
 
     # ── Per-90 normalisation note ──────────────────────────────────────────────
     # All counting stats are shown per-90 minutes to remove the bias of a
@@ -100,7 +111,7 @@ with tab2:
     # accumulated volume is meaningful.  Rate stats (pass %, max speed, rating)
     # are averaged directly.
     # Reference: any volume metric without per-90 scaling will favour the player
-    # with more minutes — this was flagged as a methodological gap in review.
+    # with more minutes - this was flagged as a methodological gap in review.
 
     # Per-90 columns exist from compute_derived_kpis; add remaining ones here
     COUNTING_STATS = ["shots", "key_passes", "progressive_passes", "dribbles_won",
@@ -141,7 +152,7 @@ with tab2:
         display_df.index.name = "Player"
         st.dataframe(display_df, width="stretch")
 
-        # Grouped bar chart — key metrics (all per-90 except totals)
+        # Grouped bar chart - key metrics (all per-90 except totals)
         key_m = {
             "Goals":            ("goals",         "total"),
             "Assists":          ("assists",        "total"),
@@ -178,7 +189,13 @@ with tab2:
 # SEASON TRENDS
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab3:
-    section_header("Season Form Comparison", icon="📈")
+    section_header("Season Form Comparison", icon="📈",
+                   help_text=(
+                       "Rolling average of match rating over the season for both players. "
+                       "Match rating is a 4.5-9.5 composite score based on goals, assists, and position-specific performance metrics.<br><br>"
+                       "A rising line = improving form. A flat line = consistent. A falling line = recent dip in performance. "
+                       "Compare the shapes: if Player A is rising while Player B is falling, the momentum is shifting."
+                   ))
     metric_choice = st.selectbox("Metric", [
         "match_rating", "xg", "xa", "goals", "shots", "passes",
         "key_passes", "dribbles_won", "tackles_won", "distance_m", "hsr_m",
@@ -197,12 +214,17 @@ with tab3:
                       xaxis=dict(title="Date", gridcolor=COLORS["grid"]),
                       yaxis=dict(title=metric_choice.replace("_m","").replace("_"," ").title(),
                                  gridcolor=COLORS["grid"]))
-    fig.update_layout(title="4-Match Rolling Average — Form Trend",
+    fig.update_layout(title="4-Match Rolling Average - Form Trend",
                       legend=dict(orientation="h", y=1.12))
     st.plotly_chart(fig, width="stretch")
 
     # Percentile rank bars
-    section_header("Percentile Rankings vs Full Squad", icon="📐")
+    section_header("Percentile Rankings vs Full Squad", icon="📐",
+                   help_text=(
+                       "Bar chart showing both players' percentile scores for each metric side by side against the full squad distribution.<br><br>"
+                       "A percentile of 90 means the player outperforms 90% of the squad on that metric. "
+                       "This makes it easy to spot where one player is clearly superior to the other and by how much."
+                   ))
     z_metrics_list = ["distance_m","hsr_m","shots","goals","assists",
                       "xg","key_passes","dribbles_won","tackles_won","match_rating"]
     z_df = z_score_table(match_players, z_metrics_list)

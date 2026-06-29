@@ -43,7 +43,7 @@ def _generate_training_data(n: int = 5_000, seed: int = 0) -> tuple[np.ndarray, 
     perfectly separable classes.
 
     NOTE: because labels are derived from the features, a model achieving
-    very high AUC is not evidence of real predictive power — it reflects
+    very high AUC is not evidence of real predictive power - it reflects
     how well it has recovered the generating function.
     """
     rng = np.random.default_rng(seed)
