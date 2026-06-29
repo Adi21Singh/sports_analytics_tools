@@ -3,7 +3,7 @@
 from __future__ import annotations
 import plotly.graph_objects as go
 import streamlit as st
-from config import COLORS, CHART_BASE, ACWR_ZONES
+from config import COLORS, CHART_BASE
 
 
 # ── KPI card ──────────────────────────────────────────────────────────────────
@@ -157,20 +157,6 @@ def stat_strip(items: list[dict]) -> None:
     st.markdown(f'<div class="stat-strip">{cells}</div>', unsafe_allow_html=True)
 
 
-# ── Risk badge ────────────────────────────────────────────────────────────────
-
-_BADGE_CLASS = {
-    "Optimal":        "badge-optimal",
-    "Caution":        "badge-caution",
-    "High Risk":      "badge-high",
-    "Under-training": "badge-under",
-}
-
-def risk_badge(zone: str) -> str:
-    cls = _BADGE_CLASS.get(zone, "badge-under")
-    return f'<span class="badge {cls}">{zone}</span>'
-
-
 # ── Info box ──────────────────────────────────────────────────────────────────
 
 def info_box(text: str) -> None:
@@ -284,113 +270,3 @@ def draw_pitch() -> go.Figure:
     )
     return fig
 
-
-# ── 3D KPI Dashboard ──────────────────────────────────────────────────────────
-
-def create_3d_kpi_dashboard(
-    df,
-    x_col: str, y_col: str, z_col: str,
-    color_col: str = None,
-    size_col: str = None,
-    hover_cols: list = None,
-    title: str = "3D KPI Dashboard"
-) -> go.Figure:
-    """Create a 3D scatter plot for multi-metric KPI visualization."""
-    import pandas as pd
-    import numpy as np
-
-    hover_cols = hover_cols or []
-    fig = go.Figure()
-
-    def _format_val(v):
-        try:
-            if pd.isna(v):
-                return "N/A"
-            return f"{float(v):.2f}"
-        except (TypeError, ValueError):
-            return str(v)
-
-    if color_col and color_col in df.columns:
-        for color_val in df[color_col].unique():
-            subset = df[df[color_col] == color_val]
-            size_vals = subset[size_col] if size_col and size_col in subset.columns else 5
-
-            hover_text = []
-            for idx, (_, row) in enumerate(subset.iterrows()):
-                player_name = row.get('player_name', f'Player {idx}')
-                text = f"<b>{player_name}</b><br>"
-                text += f"{x_col}: {_format_val(row[x_col])}<br>"
-                text += f"{y_col}: {_format_val(row[y_col])}<br>"
-                text += f"{z_col}: {_format_val(row[z_col])}<br>"
-                for col in hover_cols:
-                    if col in row.index:
-                        text += f"{col}: {_format_val(row[col])}<br>"
-                hover_text.append(text)
-
-            fig.add_trace(go.Scatter3d(
-                x=subset[x_col], y=subset[y_col], z=subset[z_col],
-                mode="markers",
-                name=str(color_val),
-                marker=dict(
-                    size=5 if not isinstance(size_vals, (list, np.ndarray)) else size_vals,
-                    opacity=0.8,
-                    line=dict(width=0.5, color=COLORS["bg"]),
-                ),
-                text=hover_text,
-                hovertemplate="%{text}<extra></extra>",
-            ))
-    else:
-        size_vals = df[size_col] if size_col and size_col in df.columns else 5
-        hover_text = []
-        for idx, (_, row) in enumerate(df.iterrows()):
-            player_name = row.get('player_name', f'Player {idx}')
-            text = f"<b>{player_name}</b><br>"
-            text += f"{x_col}: {_format_val(row[x_col])}<br>"
-            text += f"{y_col}: {_format_val(row[y_col])}<br>"
-            text += f"{z_col}: {_format_val(row[z_col])}<br>"
-            for col in hover_cols:
-                if col in row.index:
-                    text += f"{col}: {_format_val(row[col])}<br>"
-            hover_text.append(text)
-
-        fig.add_trace(go.Scatter3d(
-            x=df[x_col], y=df[y_col], z=df[z_col],
-            mode="markers",
-            marker=dict(
-                size=5 if not isinstance(size_vals, (list, np.ndarray)) else size_vals,
-                color=COLORS["primary"],
-                opacity=0.8,
-                line=dict(width=0.5, color=COLORS["bg"]),
-            ),
-            text=hover_text,
-            hovertemplate="%{text}<extra></extra>",
-        ))
-
-    fig.update_layout(
-        title=title,
-        scene=dict(
-            xaxis=dict(title=x_col, gridcolor="#2a4a2a"),
-            yaxis=dict(title=y_col, gridcolor="#2a4a2a"),
-            zaxis=dict(title=z_col, gridcolor="#2a4a2a"),
-            bgcolor=COLORS["bg"],
-        ),
-        paper_bgcolor=COLORS["bg"],
-        font=dict(color=COLORS["text"], size=11),
-        height=600,
-        margin=dict(l=0, r=0, t=50, b=0),
-        legend=dict(bgcolor="rgba(0,0,0,0.5)"),
-    )
-
-    return fig
-
-
-# ── Empty state ───────────────────────────────────────────────────────────────
-
-def empty_state(message: str = "No data available for the selected filters.") -> None:
-    st.markdown(
-        f'<div style="text-align:center;padding:3rem;color:{COLORS["muted"]};'
-        f'background:{COLORS["surface"]};border-radius:12px;border:1px dashed {COLORS["border"]};">'
-        f'<div style="font-size:2rem;margin-bottom:.5rem;">📭</div>'
-        f'<div>{message}</div></div>',
-        unsafe_allow_html=True,
-    )

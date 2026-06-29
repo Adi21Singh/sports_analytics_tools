@@ -27,7 +27,7 @@ A Streamlit dashboard for football press and match analytics, built on StatsBomb
 ```
 sports-analytics-group-assignment/
 ├── app.py                    # Streamlit entry point, page routing
-├── config.py                 # Central config: colours, thresholds, position profiles
+├── config.py                 # Central config: colours, chart defaults
 ├── requirements.txt          # Pinned dependencies
 ├── pyproject.toml            # uv project manifest
 │
@@ -36,29 +36,14 @@ sports-analytics-group-assignment/
 │   └── press_intelligence.py # PPDA windows, momentum index, substitution profiles
 │
 ├── analytics/
-│   ├── press_engine.py       # Core PPDA engine (active)
-│   ├── clustering.py         # K-means player clustering (legacy, unused)
-│   ├── load_monitoring.py    # ACWR / PMC / monotony (legacy, unused)
-│   ├── performance.py        # Player performance helpers (legacy, unused)
-│   ├── risk_model.py         # ML injury risk model (legacy, unused)
-│   └── validate_xg.py        # xG model validation (legacy, unused)
+│   └── press_engine.py       # Core PPDA engine
 │
-├── ui/
-│   ├── components.py         # Shared UI: kpi_card, draw_pitch, section_header …
-│   ├── styles.py             # Global CSS injected via st.markdown
-│   └── data_source.py        # Data source selector widget
-│
-├── data/
-│   ├── generator.py          # Synthetic player data generator (legacy)
-│   └── real_loader.py        # FBref CSV → per-match records (legacy)
-│
-└── docs/
-    └── Press_Intelligence_Module_v2.docx
+└── ui/
+    ├── components.py         # Shared UI: kpi_card, draw_pitch, section_header …
+    └── styles.py             # Global CSS injected via st.markdown
 ```
 
-**Active code path:** `app.py` → `pages/match_analysis.py` + `pages/press_intelligence.py` → `analytics/press_engine.py` + `ui/` + `config.py`
-
-The `data/`, `analytics/clustering.py`, and other analytics files are retained from the previous version but are not imported by any live page.
+**Code path:** `app.py` → `pages/match_analysis.py` + `pages/press_intelligence.py` → `analytics/press_engine.py` + `ui/` + `config.py`
 
 ---
 
@@ -199,11 +184,9 @@ Single source of truth for all magic numbers and design tokens. Key exports:
 | `COLORS` | `dict` | Design token palette (bg, surface, primary teal, etc.) |
 | `PALETTE` | `list[str]` | 10-colour chart sequence |
 | `CHART_BASE` | `dict` | Base `update_layout` kwargs for all Plotly figures |
-| `ACWR_ZONES` | `dict` | ACWR zone boundaries, colours, labels |
-| `WELLNESS_WEIGHTS` | `dict` | Evidence-based wellness composite weights (McLean 2010) |
-| `POSITION_PROFILES` | `dict` | Per-position mean/std for 28 match metrics (GK → ST) |
-| `SESSION_FACTORS` | `dict` | Scaling factors per session type (MD, MD±n, GYM) |
-| `acwr_zone(value)` | `func` | Returns zone name string for a given ACWR value |
+| `TEAM_NAME` | `str` | Competition name (`"La Liga"`) |
+| `SEASON` | `str` | Season string (`"2015/16"`) |
+| `PITCH_LEN` / `PITCH_WID` | `float` | Display pitch dimensions in metres (105 × 68) |
 
 ---
 
@@ -238,11 +221,6 @@ StatsBomb data is fetched over HTTP on first use and cached to disk under `analy
 | Build-up Tendency Classifier | Press Intelligence | Original extension |
 | Match Momentum Index | Press Intelligence | Original heuristic (PPDA 60% + territory 40%) |
 | Expected Goals (xG) | Match Analysis | Rathke (2017) — location-only model |
-| ACWR (Acute:Chronic Workload Ratio) | `analytics/load_monitoring.py` (legacy) | Gabbett (2016), Br J Sports Med |
-| Training Monotony and Strain | `analytics/load_monitoring.py` (legacy) | Foster (1998), J Strength Cond Res |
-| Performance Management Chart | `analytics/load_monitoring.py` (legacy) | Banister (1991) |
-| Random Forest Classification | `analytics/risk_model.py` (legacy) | Breiman (2001) |
-| K-means Clustering + PCA | `analytics/clustering.py` (legacy) | MacQueen (1967), Pearson (1901) |
 
 ---
 
