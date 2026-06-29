@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 # ── Team ──────────────────────────────────────────────────────────────────────
-TEAM_NAME   = "FC Analytics United"
-SEASON      = "2024/25"
+TEAM_NAME   = "La Liga"
+SEASON      = "2015/16"
 PITCH_LEN   = 105.0  # metres
 PITCH_WID   = 68.0
 
